@@ -1,0 +1,309 @@
+# Chrome Extension — Cognitive State Detection
+
+A hackathon Chrome extension that passively monitors user behavioral signals (keyboard, mouse, scroll, tab activity, page content, environment) and syncs snapshots every 30 seconds to a backend API. Only the **onboarding** uses a side panel; all runtime UI uses a **floating popup** in the bottom-right corner.
+
+---
+
+## Architecture Overview
+
+```
+┌─────────────────────────────────────────────────────┐
+│                   Chrome Extension                   │
+│                                                     │
+│  ┌──────────────┐   ┌───────────────────────────┐  │
+│  │ manifest.json│   │  background.js (SW)        │  │
+│  └──────────────┘   │  - State aggregation        │  │
+│                     │  - Tab/idle/env tracking    │  │
+│  ┌──────────────┐   │  - 30s sync timer           │  │
+│  │ sidepanel/   │   │  - Pending snapshot buffer  │  │
+│  │ onboarding   │   └───────────┬───────────────┘  │
+│  └──────────────┘               │ message bus       │
+│                                 │                   │
+│  ┌──────────────┐   ┌───────────▼───────────────┐  │
+│  │ popup/       │   │  content.js (injected)     │  │
+│  │ floating HUD │◄──│  - Keyboard stream         │  │
+│  └──────────────┘   │  - Mouse stream             │  │
+│                     │  - Scroll stream            │  │
+│                     │  - Page content stream      │  │
+│                     └───────────────────────────┘  │
+└─────────────────────────────────────────────────────┘
+         │
+         │ POST /api/snapshot (every 30s)
+         ▼
+   Backend API (localhost:8000)
+```
+
+---
+
+## File Structure
+
+```
+extension/
+├── manifest.json                  # MV3 manifest
+├── background.js                  # Service worker
+├── content.js                     # Injected into every tab
+├── sidepanel/
+│   ├── sidepanel.html             # Onboarding only
+│   ├── sidepanel.js
+│   └── sidepanel.css
+├── floating/
+│   ├── floating.html              # Floating HUD injected into page
+│   ├── floating.js
+│   └── floating.css
+└── icons/
+    ├── icon16.png
+    ├── icon48.png
+    └── icon128.png
+```
+
+---
+
+## Proposed Changes
+
+### Phase 1 — Project Scaffold & Manifest
+
+#### [NEW] `extension/manifest.json`
+- Manifest version: **3**
+- Permissions: `tabs`, `storage`, `idle`, `webNavigation`, `scripting`, `sidePanel`, `activeTab`
+- Host permissions: `<all_urls>` (for content script injection)
+- Background: `background.js` as service worker
+- Content scripts: `content.js` injected at `document_idle` into all URLs
+- Side panel: `sidepanel/sidepanel.html`
+- Action: clicking icon opens side panel (first run) or toggles floating HUD
+
+---
+
+### Phase 2 — Onboarding Side Panel
+
+#### [NEW] `sidepanel/sidepanel.html` + `sidepanel.js` + `sidepanel.css`
+
+**Screens inside the side panel:**
+1. **Welcome screen** — Explains what data is collected and why
+2. **Config screen** — API URL input (default: `http://localhost:8000/api/snapshot`), toggles for:
+   - Camera enabled
+   - Keyboard monitoring
+   - Mouse monitoring
+   - Scroll monitoring
+   - Privacy mode (masks URL paths)
+3. **Done screen** — "Monitoring Active" confirmation with basic stats
+
+**Logic in `sidepanel.js`:**
+- On load: reads `chrome.storage.local` → if `onboarding_complete` is `true`, show status screen; else show onboarding flow
+- On "Start Monitoring" click:
+  - Validates API URL format
+  - Writes config to `chrome.storage.local`
+  - Generates `session_id` via `crypto.randomUUID()` stored in `chrome.storage.session`
+  - Sends `INIT` message to background service worker
+  - Shows done screen
+
+**Config schema written to storage:**
+```json
+{
+  "api_url": "http://localhost:8000/api/snapshot",
+  "camera_enabled": true,
+  "keyboard_enabled": true,
+  "mouse_enabled": true,
+  "scroll_enabled": true,
+  "privacy_mode": false,
+  "onboarding_complete": true
+}
+```
+
+---
+
+### Phase 3 — Background Service Worker
+
+#### [NEW] `background.js`
+
+**Responsibilities:**
+
+**3.1 — State Object**
+```js
+const state = {
+  session_id, session_start,
+  tab: {}, keyboard: {}, mouse: {}, scroll: {},
+  page: {}, camera: {}, temporal: {}, environment: {},
+  pending_snapshots: [], last_sync: null,
+  focus_streak_start: Date.now(), break_count: 0
+}
+```
+
+**3.2 — Tab Tracking**
+- `chrome.tabs.onActivated` → compute `time_on_page_s` for previous tab, update `state.tab`
+- `chrome.tabs.onUpdated` → record new URL + domain when URL changes
+- `chrome.webNavigation.onCompleted` → record page_visible = true
+- `chrome.idle.onStateChanged` → track idle/active/locked, increment `break_count` on idle
+
+**3.3 — Message Listener** (`chrome.runtime.onMessage`)
+Handles incoming messages from content scripts and side panel:
+
+| Message Type | Action |
+|---|---|
+| `KEYBOARD_BATCH` | Merge into `state.keyboard` |
+| `MOUSE_BATCH` | Merge into `state.mouse` |
+| `SCROLL_BATCH` | Merge into `state.scroll` |
+| `PAGE_BATCH` | Merge into `state.page` |
+| `PAGE_HIDDEN` | Set `state.tab.page_visible = false` |
+| `PAGE_VISIBLE` | Set `state.tab.page_visible = true` |
+| `INIT` | Load config, start 30s sync timer |
+| `GET_STATUS` | Return current state summary to floating HUD |
+
+**3.4 — Environmental Data Collection** (called on init + each 30s cycle)
+```js
+async function collectEnvironment() {
+  const battery = await navigator.getBattery();
+  const now = new Date();
+  state.environment = {
+    battery_level: battery.level,
+    is_charging: battery.charging,
+    screen_width: screen.width,
+    screen_height: screen.height,
+    hour_of_day: now.getHours(),
+    day_of_week: now.getDay(),
+    is_late_night: now.getHours() >= 23 || now.getHours() <= 4,
+    session_duration_s: (Date.now() - state.session_start) / 1000,
+    chrome_idle_state: await chrome.idle.queryState(60)
+  };
+}
+```
+
+**3.5 — Snapshot Assembly** (every 30s)
+Assembles full `CognitiveSnapshot` object:
+```json
+{
+  "session_id": "uuid",
+  "timestamp": 1234567890,
+  "tab": { "url": "...", "domain": "...", "time_on_page_s": 45, "tab_count": 7, "switch_freq_per_min": 2, "page_visible": true },
+  "keyboard": { "wpm_estimate": 55, "error_rate": 0.04, "pause_detected": false, "burst_typing": true, "keydown_count": 280 },
+  "mouse": { "speed_avg": 340, "acceleration_variance": 120, "cursor_idle_ms": 200, "click_rate_per_min": 8, "click_interval_ms_avg": 900 },
+  "scroll": { "depth_pct": 42, "velocity_avg": 600, "direction_changes": 3 },
+  "page": { "form_active": false, "video_playing": false, "video_watch_duration_s": 0, "engagement_score": 87 },
+  "environment": { "battery_level": 0.88, "is_charging": true, "hour_of_day": 14, "session_duration_s": 1800, "chrome_idle_state": "active" }
+}
+```
+
+**3.6 — Backend Sync**
+- `POST` snapshot to configured `api_url`
+- On success: update `state.last_sync`, clear sent pending snapshots, update floating HUD
+- On failure: append to `pending_snapshots` (cap at 20), update floating HUD with "Offline" status
+- On next success: send pending snapshots first (in order), then current snapshot
+
+---
+
+### Phase 4 — Content Script
+
+#### [NEW] `content.js`
+
+**4.1 — Keyboard Stream**
+- Event: `keydown` on `document`
+- Tracks: `inter_key_delay_ms`, `backspace_count`, `pause_count` (gap > 2000ms), `keydown_count`
+- Every 5s: compute `wpm_estimate`, `error_rate`, `burst_typing`, send `KEYBOARD_BATCH`
+
+**4.2 — Mouse Stream**
+- Events: `mousemove` (throttled 50ms), `mousedown`, `click`
+- Tracks: speed samples, `click_count`, `click_interval_ms`
+- Every 5s: compute `speed_avg`, `acceleration_variance`, `cursor_idle_ms`, `click_rate_per_min`, send `MOUSE_BATCH`
+
+**4.3 — Scroll Stream**
+- Event: `scroll` (throttled 100ms)
+- Tracks: `scroll_delta`, `direction_changes`, velocity samples
+- Every 5s: compute `depth_pct`, `velocity_avg`, send `SCROLL_BATCH`
+
+**4.4 — Page Content Stream**
+- `form_active`: focus/blur listeners on all `input` and `textarea` elements
+- `video_playing`: poll `document.querySelectorAll('video')` every 5s
+- `engagement_score`: `(keydowns * 2 + clicks * 3 + scroll_events * 1)` per 5s window
+- `visibilitychange` listener → sends `PAGE_HIDDEN` / `PAGE_VISIBLE`
+- Every 5s: send `PAGE_BATCH`
+
+**4.5 — Floating HUD Injection**
+- After content.js loads, it injects `floating.html` content into the page DOM as a shadow DOM element (isolated from page styles)
+- Sends `GET_STATUS` to background every 5s to keep HUD updated
+
+---
+
+### Phase 5 — Floating HUD
+
+#### [NEW] `floating/floating.html` + `floating.js` + `floating.css`
+
+> **Key decision**: The floating HUD is injected via the content script as a Shadow DOM element, keeping it visually isolated from page styles and position-fixed to the bottom-right corner.
+
+**HUD States:**
+
+| State | Display |
+|---|---|
+| **Not configured** | "Click extension icon to set up" |
+| **Active** | Pulsing green dot + "Monitoring Active" + last sync time |
+| **Offline** | Red dot + "Offline — X snapshots buffered" |
+| **Idle detected** | Yellow dot + "Idle detected" |
+
+**HUD Features:**
+- Minimizable: click to collapse to just the dot indicator
+- Drag-to-reposition (top-right or bottom-right anchor)
+- Shows: current cognitive state label (returned from backend if available), session duration, last sync time
+- "Open Settings" button → sends message to open the side panel
+
+**HUD Design:**
+- Dark glassmorphism card (blur + semi-transparent dark background)
+- Color-coded status indicator dot
+- Smooth expand/collapse animation
+- Non-intrusive: low opacity when not hovered, full opacity on hover
+
+---
+
+## Open Questions
+
+> [!IMPORTANT]
+> **Backend Response Shape**: Does the backend `/api/snapshot` endpoint return a cognitive state label (e.g., `"focus"`, `"confused"`, `"fatigued"`) in its response? If yes, the floating HUD can display it. If not, the HUD just shows "Monitoring Active".
+
+> [!IMPORTANT]
+> **rPPG / Camera Stream**: Your spec mentions `camera_enabled` as a toggle. Is the camera capture handled by the extension itself (getUserMedia in the side panel or a dedicated camera.js), or will a separate desktop agent handle it? This impacts what we build in the extension.
+
+> [!WARNING]
+> **Privacy Mode**: When privacy mode is on, should the extension mask the full URL (sending only the domain), or also suppress keyboard/mouse data? Please clarify the scope.
+
+> [!NOTE]
+> **Tab Switching Rate**: The `switch_freq_per_min` metric requires a rolling 60-second event log. The service worker is non-persistent in MV3 and may be terminated by Chrome between events. We'll use `chrome.storage.session` to persist the rolling window safely. Just flagging this as a non-obvious implementation challenge.
+
+---
+
+## Implementation Order (Step-by-Step)
+
+| Step | Task | File(s) |
+|---|---|---|
+| 1 | Create project folder structure + icons | `extension/` |
+| 2 | Write `manifest.json` (MV3) | `manifest.json` |
+| 3 | Build onboarding side panel (HTML + CSS + JS) | `sidepanel/` |
+| 4 | Write background service worker skeleton with state + message bus | `background.js` |
+| 5 | Implement tab tracking (onActivated, onUpdated, webNavigation) | `background.js` |
+| 6 | Implement environmental data collection | `background.js` |
+| 7 | Implement 30s snapshot assembly + backend POST | `background.js` |
+| 8 | Implement pending buffer (offline resilience, cap at 20) | `background.js` |
+| 9 | Write content script — keyboard stream | `content.js` |
+| 10 | Write content script — mouse stream | `content.js` |
+| 11 | Write content script — scroll stream | `content.js` |
+| 12 | Write content script — page content stream | `content.js` |
+| 13 | Build floating HUD (shadow DOM injection) | `floating/` |
+| 14 | Wire HUD status updates from background | `background.js` + `floating.js` |
+| 15 | Add HUD toggle (collapse/expand, drag) | `floating.js` |
+| 16 | Test full flow: onboarding → monitoring → sync → HUD feedback | manual |
+| 17 | Package as unpacked extension and test in Chrome | manual |
+
+---
+
+## Verification Plan
+
+### Automated / Scripted Tests
+- Load extension as unpacked in Chrome (`chrome://extensions` → Developer Mode → Load Unpacked)
+- Open DevTools → Extensions → Inspect service worker → confirm state object updates
+- Open any webpage → confirm floating HUD appears in bottom-right
+- Verify `chrome.storage.local` via DevTools: confirm config written correctly after onboarding
+- Simulate offline: point API URL to `localhost:9999` (nothing listening) → confirm HUD shows "Offline — X buffered"
+- Simulate recovery: restore valid API URL → confirm buffered snapshots are sent
+
+### Manual Verification
+- Complete the onboarding flow in the side panel
+- Type actively on a webpage → confirm `wpm_estimate` appears in the next snapshot (check service worker console)
+- Switch tabs rapidly → confirm `switch_freq_per_min` increments
+- Let the browser go idle for 60s → confirm idle state is detected and reflected in snapshot
+- Scroll a long page → confirm `depth_pct` updates

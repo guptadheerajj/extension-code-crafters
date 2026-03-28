@@ -215,6 +215,38 @@ body {
 }
 .btn-pause.paused:hover { background: rgba(34, 197, 94, 0.15); }
 
+.btn-stop {
+  width: 100%;
+  padding: 11px 20px;
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.25);
+  border-radius: var(--radius-lg);
+  color: #f87171;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
+  transition: all 0.15s;
+  text-align: center;
+}
+.btn-stop:hover { background: rgba(239, 68, 68, 0.2); border-color: rgba(239, 68, 68, 0.4); }
+
+/* Stopped state banner */
+.stopped-banner {
+  margin-top: 16px;
+  padding: 20px 16px;
+  background: rgba(239, 68, 68, 0.06);
+  border: 1px solid rgba(239, 68, 68, 0.15);
+  border-radius: var(--radius-lg);
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: center;
+}
+.stopped-icon { font-size: 28px; }
+.stopped-text { font-size: 12px; color: var(--text-secondary); max-width: 220px; }
+
 /* Spinner */
 .spinner {
   width: 16px; height: 16px;

@@ -209,7 +209,15 @@
 
       <div class="action-row">
         <button class="btn-pause" id="btn-pause">⏸️ Pause Monitoring</button>
+        <button class="btn-stop" id="btn-stop">⛔ Stop &amp; Remove HUDs</button>
         <button class="btn-secondary" id="btn-reconfigure">⚙ Reconfigure</button>
+      </div>
+
+      <!-- Shown only when monitoring is stopped -->
+      <div class="stopped-banner" id="stopped-banner" style="display:none">
+        <div class="stopped-icon">⛔</div>
+        <div class="stopped-text">Monitoring stopped. HUDs removed from all tabs.</div>
+        <button class="btn-primary" id="btn-reenable">&#9654; Re-enable Monitoring</button>
       </div>
     </div>
   </div>

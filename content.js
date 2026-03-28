@@ -13,25 +13,31 @@ window.__cogniSenseInjected = true;
 // ----------------------------------------------------------------
 // SAFE RUNTIME BRIDGE
 // Prevents "Extension context invalidated" crashes after an extension
-// reload while old content scripts are still alive in open tabs.
+// reload/disable while old content scripts are still alive in open tabs.
 // ----------------------------------------------------------------
 let _contextAlive = true;
 const _intervalIds = [];
 
+/** Remove HUD from DOM and kill all intervals. Called on extension disable or reload. */
+function teardown() {
+  if (!_contextAlive) return; // already torn down
+  _contextAlive = false;
+  _intervalIds.forEach(clearInterval);
+  // Remove the injected HUD element immediately so it doesn't linger
+  const hudRoot = document.getElementById('__cogni-sense-hud-root__');
+  if (hudRoot) hudRoot.remove();
+  // Clear the injection guard so a fresh content script can inject after re-enable
+  delete window.__cogniSenseInjected;
+}
+
 function safeSendMessage(msg, callback) {
   if (!_contextAlive) return;
-  if (!chrome.runtime?.id) {
-    // Context is gone — stop all intervals so we don't keep hammering
-    _contextAlive = false;
-    _intervalIds.forEach(clearInterval);
-    return;
-  }
+  if (!chrome.runtime?.id) { teardown(); return; }
   try {
     const p = chrome.runtime.sendMessage(msg, callback);
     if (p && typeof p.catch === 'function') p.catch(() => {});
   } catch (_) {
-    _contextAlive = false;
-    _intervalIds.forEach(clearInterval);
+    teardown();
   }
 }
 
@@ -43,6 +49,39 @@ function safeInterval(fn, ms) {
   _intervalIds.push(id);
   return id;
 }
+
+// ================================================================
+// EXTENSION LIFECYCLE
+//
+// WHY NOT chrome.runtime.connect?
+// In MV3, Chrome terminates the service worker after ~30s of idle.
+// A port opened to the SW via connect() fires onDisconnect EVERY
+// TIME the SW sleeps — not just when the extension is disabled.
+// Using connect() for teardown detection causes false positives
+// that remove the HUD while the extension is still active.
+//
+// CORRECT APPROACH:
+// 1. Poll chrome.runtime.id every second (it becomes undefined only
+//    when the extension is truly disabled, not when SW sleeps).
+// 2. Listen for an explicit FORCE_TEARDOWN message broadcast by
+//    the background when the user clicks "Stop Monitoring".
+// ================================================================
+
+// 1-second context watcher: detects real extension disable
+;(function startContextWatcher() {
+  const watcherId = setInterval(() => {
+    if (!_contextAlive) { clearInterval(watcherId); return; }
+    if (!chrome.runtime?.id) teardown();
+  }, 1000);
+})();
+
+// Top-level FORCE_TEARDOWN listener (works even before HUD is injected)
+try {
+  chrome.runtime.onMessage.addListener((msg) => {
+    if (msg.type === 'FORCE_TEARDOWN') teardown();
+    return false;
+  });
+} catch (_) {}
 
 // ----------------------------------------------------------------
 // THROTTLE UTILITY
@@ -537,13 +576,20 @@ function injectFloatingHUD() {
     .cogni-btn.pause-active { background: rgba(239,68,68,0.12); border-color: rgba(239,68,68,0.25); color: #f87171; }
     .cogni-btn.pause-active:hover { background: rgba(239,68,68,0.2); }
 
+    /* STOP button */
+    .cogni-stop-btn { flex: 0 0 28px !important; padding: 0 !important; font-size: 13px; }
+    .cogni-stop-btn:hover { background: rgba(239,68,68,0.15) !important; border-color: rgba(239,68,68,0.3) !important; }
+
+    /* SETTINGS icon button */
+    .cogni-icon-btn { flex: 0 0 28px !important; padding: 0 !important; font-size: 13px; }
+
     /* PAUSED state */
     .cogni-dot.paused { background: #6b7280; }
     .cogni-dot.paused::after { background: rgba(107,114,128,0.2); animation: none; }
     .cogni-collapsed-dot.paused { background: #6b7280; box-shadow: 0 0 6px rgba(107,114,128,0.5); }
 
-    /* Two-button footer */
-    .cogni-footer { margin-top: 10px; display: flex; gap: 6px; }
+    /* Three-button footer: [---Pause---][Stop][⚙] */
+    .cogni-footer { margin-top: 10px; display: flex; gap: 5px; }
     .cogni-footer .cogni-btn { width: auto; flex: 1; }
   `;
   shadow.appendChild(style);
@@ -589,10 +635,11 @@ function injectFloatingHUD() {
         <!-- Cognitive state badge (shown only when backend returns state) -->
         <div class="cogni-badge" id="cogni-badge" style="display:none"></div>
 
-        <!-- Footer -->
+        <!-- Footer: [Pause] [Stop] [⚙] -->
         <div class="cogni-footer">
           <button class="cogni-btn" id="cogni-pause-btn">⏸ Pause</button>
-          <button class="cogni-btn" id="cogni-settings-btn">⚙ Settings</button>
+          <button class="cogni-btn cogni-stop-btn" id="cogni-stop-btn" title="Stop monitoring &amp; remove HUD from all tabs">⛔</button>
+          <button class="cogni-btn cogni-icon-btn" id="cogni-settings-btn" title="Settings">⚙</button>
         </div>
       </div>
     </div>
@@ -631,6 +678,14 @@ function injectFloatingHUD() {
         }
       }
     });
+  });
+
+  shadow.getElementById('cogni-stop-btn').addEventListener('click', (e) => {
+    e.stopPropagation();
+    // Background will broadcast FORCE_TEARDOWN to ALL tabs, removing every HUD
+    safeSendMessage({ type: 'DISABLE_MONITORING' });
+    // Optimistically teardown this tab immediately (won't wait for broadcast)
+    setTimeout(teardown, 100);
   });
 
   shadow.getElementById('cogni-settings-btn').addEventListener('click', () => {

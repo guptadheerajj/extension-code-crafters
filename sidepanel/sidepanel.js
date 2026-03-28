@@ -47,9 +47,34 @@ function stopActiveRefresh() {
   }
 }
 
+function setStoppedUI(stopped) {
+  const actionRow    = document.querySelector('.action-row');
+  const stoppedBanner = document.getElementById('stopped-banner');
+  const statsGrid    = document.querySelector('.stats-grid');
+  const statusRow    = document.getElementById('sync-status-row');
+  if (stopped) {
+    if (actionRow) actionRow.style.display = 'none';
+    if (stoppedBanner) stoppedBanner.style.display = 'flex';
+    if (statsGrid) statsGrid.style.opacity = '0.35';
+    if (statusRow) statusRow.style.display = 'none';
+  } else {
+    if (actionRow) actionRow.style.display = 'flex';
+    if (stoppedBanner) stoppedBanner.style.display = 'none';
+    if (statsGrid) statsGrid.style.opacity = '1';
+    if (statusRow) statusRow.style.display = 'flex';
+  }
+}
+
 function updateActiveScreen() {
   chrome.runtime.sendMessage({ type: 'GET_STATUS' }, (resp) => {
     if (chrome.runtime.lastError || !resp) return;
+
+    // Handle stopped state
+    if (!resp.monitoring_enabled) {
+      setStoppedUI(true);
+      return;
+    }
+    setStoppedUI(false);
 
     const sessionEl  = document.getElementById('stat-session');
     const syncEl     = document.getElementById('stat-sync');
@@ -69,7 +94,6 @@ function updateActiveScreen() {
         ? resp.cognitive_state.charAt(0).toUpperCase() + resp.cognitive_state.slice(1)
         : '—');
 
-    // Sync pause button label
     if (pauseBtn) {
       if (resp.paused) {
         pauseBtn.textContent = '▶️ Resume Monitoring';

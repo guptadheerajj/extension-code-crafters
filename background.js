@@ -68,6 +68,7 @@ function initState(sessionId) {
 async function initialize() {
   const stored = await chrome.storage.local.get(null);
   if (!stored.onboarding_complete) return;
+  if (stored.monitoring_enabled === false) return; // user explicitly stopped monitoring
 
   config = stored;
 
@@ -373,9 +374,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
       case 'GET_STATUS':
         if (state) {
-          sendResponse(buildStatusPayload());
+          sendResponse({ ...buildStatusPayload(), monitoring_enabled: true });
         } else {
-          sendResponse({ ok: false, initialized: false });
+          // State is null: either not initialized or disabled
+          const { monitoring_enabled } = await chrome.storage.local.get('monitoring_enabled');
+          sendResponse({ ok: false, initialized: false, monitoring_enabled: monitoring_enabled !== false });
         }
         break;
 
@@ -387,6 +390,43 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         chrome.tabs.create({ url: chrome.runtime.getURL('sidepanel/sidepanel.html') });
         sendResponse({ ok: true });
         break;
+
+      case 'DISABLE_MONITORING': {
+        // 1. Broadcast teardown to every open tab so all HUDs are removed
+        const allTabs = await chrome.tabs.query({});
+        for (const tab of allTabs) {
+          if (tab.id) chrome.tabs.sendMessage(tab.id, { type: 'FORCE_TEARDOWN' }).catch(() => {});
+        }
+        // 2. Kill the sync alarm
+        chrome.alarms.clear('cogni_sync');
+        // 3. Persist disabled state (keeps config so re-enable is instant)
+        await chrome.storage.local.set({ monitoring_enabled: false });
+        // 4. Clear in-memory state
+        state = null;
+        sendResponse({ ok: true });
+        break;
+      }
+
+      case 'ENABLE_MONITORING': {
+        await chrome.storage.local.set({ monitoring_enabled: true });
+        await initialize();
+        // Re-inject content.js into all open HTTP/HTTPS tabs so HUDs reappear
+        // (Chrome only auto-injects on new page loads after re-enable)
+        try {
+          const httpTabs = await chrome.tabs.query({ url: ['http://*/*', 'https://*/*'] });
+          for (const tab of httpTabs) {
+            if (tab.id) {
+              chrome.scripting.executeScript({
+                target: { tabId: tab.id },
+                files: ['content.js']
+              }).catch(() => {});
+            }
+          }
+        } catch (_) {}
+        await broadcastHudUpdate();
+        sendResponse({ ok: true });
+        break;
+      }
 
       case 'TOGGLE_PAUSE':
         state.paused = !state.paused;
