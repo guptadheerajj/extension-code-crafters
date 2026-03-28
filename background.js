@@ -13,6 +13,9 @@ let state = null;
 function initState(sessionId) {
   state = {
     session_id: sessionId,
+    backend_session_id: null,
+    user_id: null,
+    next_client_seq: 1,
     session_start: Date.now(),
     tab: {
       url: null,
@@ -82,9 +85,26 @@ async function initialize() {
   initState(session_id);
 
   // Restore pending snapshots and paused state from storage
-  const { pending_snapshots, monitoring_paused } = await chrome.storage.local.get(['pending_snapshots', 'monitoring_paused']);
+  const {
+    pending_snapshots,
+    monitoring_paused,
+    backend_session_id,
+    next_client_seq,
+    user_id
+  } = await chrome.storage.local.get([
+    'pending_snapshots',
+    'monitoring_paused',
+    'backend_session_id',
+    'next_client_seq',
+    'user_id'
+  ]);
   state.pending_snapshots = pending_snapshots || [];
   state.paused = monitoring_paused || false;
+  state.backend_session_id = backend_session_id || null;
+  state.next_client_seq = Number.isFinite(next_client_seq) && next_client_seq > 0 ? next_client_seq : 1;
+  state.user_id = user_id || crypto.randomUUID();
+
+  await chrome.storage.local.set({ user_id: state.user_id, next_client_seq: state.next_client_seq });
 
   await updateCurrentTab();
   await collectEnvironment();
@@ -208,9 +228,14 @@ async function collectEnvironment() {
 function assembleSnapshot() {
   const now = Date.now();
   const privacyMode = config?.privacy_mode;
+  const clientSeq = state.next_client_seq;
+  state.next_client_seq += 1;
+  chrome.storage.local.set({ next_client_seq: state.next_client_seq }).catch(() => {});
 
   return {
     session_id: state.session_id,
+    client_seq: clientSeq,
+    idempotency_key: `${state.session_id}-${clientSeq}`,
     timestamp: now,
     tab: {
       url: privacyMode ? state.tab.domain : (state.tab.url || ''),
@@ -231,6 +256,116 @@ function assembleSnapshot() {
 // ----------------------------------------------------------------
 // BACKEND SYNC
 // ----------------------------------------------------------------
+function resolveApiMode(rawUrl) {
+  if (!rawUrl) return null;
+
+  try {
+    const u = new URL(rawUrl);
+    const path = (u.pathname || '/').replace(/\/$/, '');
+
+    // Legacy single-endpoint mode
+    if (path.endsWith('/api/snapshot')) {
+      return { mode: 'legacy', snapshotUrl: u.toString() };
+    }
+
+    // Cognitive API mode
+    // Accept either /api/v1, /api/v1/*, /docs, or bare origin.
+    let basePath = '/api/v1';
+    if (path === '/docs' || path === '') {
+      basePath = '/api/v1';
+    } else if (path.startsWith('/api/v1')) {
+      basePath = '/api/v1';
+    }
+
+    const baseUrl = `${u.origin}${basePath}`;
+    return {
+      mode: 'cognitive',
+      sessionsUrl: `${baseUrl}/sessions`
+    };
+  } catch {
+    return null;
+  }
+}
+
+function buildSnapshotEnvelope(s) {
+  const stress = Math.max(0, Math.min(1,
+    (s.keyboard.error_rate * 1.8) +
+    (s.mouse.acceleration_variance > 600 ? 0.2 : 0) +
+    (s.tab.switch_freq_per_min > 6 ? 0.2 : 0)
+  ));
+  const fatigue = Math.max(0, Math.min(1,
+    (s.environment.is_late_night ? 0.35 : 0) +
+    (s.mouse.cursor_idle_ms > 4000 ? 0.25 : 0) +
+    (s.keyboard.pause_detected ? 0.2 : 0)
+  ));
+
+  return {
+    captured_at: new Date(s.timestamp).toISOString(),
+    client_seq: s.client_seq,
+    idempotency_key: s.idempotency_key,
+    payload: {
+      tab: s.tab,
+      keyboard: s.keyboard,
+      mouse: s.mouse,
+      scroll: s.scroll,
+      page: s.page,
+      environment: s.environment,
+      derived: {
+        stress_index: Number(stress.toFixed(3)),
+        fatigue_index: Number(fatigue.toFixed(3))
+      }
+    }
+  };
+}
+
+function extractCognitiveStateLabel(data) {
+  if (!data || typeof data !== 'object') return null;
+  return (
+    data.cognitive_state ||
+    data.state_label ||
+    data.latest_state_label ||
+    data?.prediction?.state_label ||
+    data?.prediction?.label ||
+    data?.state?.label ||
+    null
+  );
+}
+
+async function ensureBackendSession(apiSpec) {
+  if (!state || !apiSpec || apiSpec.mode !== 'cognitive') return;
+  if (state.backend_session_id) return;
+
+  const payload = {
+    user_id: state.user_id,
+    device_id: `chrome-${chrome.runtime.id.slice(0, 8)}`,
+    external_ref: state.session_id,
+    meta: {
+      source: 'cognisense-extension',
+      extension_version: chrome.runtime.getManifest().version
+    }
+  };
+
+  const resp = await fetch(apiSpec.sessionsUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+    signal: AbortSignal.timeout(10000)
+  });
+
+  if (!resp.ok) {
+    throw new Error(`Session create failed: HTTP ${resp.status}`);
+  }
+
+  const data = await resp.json();
+  const sessionId = data?.id || data?.session_id;
+  if (!sessionId) {
+    throw new Error('Session create failed: missing session id');
+  }
+
+  state.backend_session_id = sessionId;
+  await chrome.storage.local.set({ backend_session_id: sessionId });
+}
+
 async function syncToBackend() {
   if (!config?.api_url || !state) return;
   if (state.paused) return; // monitoring is paused by user
@@ -238,22 +373,46 @@ async function syncToBackend() {
   await collectEnvironment();
   const snapshot = assembleSnapshot();
   const toSend = [...state.pending_snapshots, snapshot];
+  const apiSpec = resolveApiMode(config.api_url);
+
+  if (!apiSpec) {
+    console.warn('[CogniSense] Invalid API URL:', config.api_url);
+    state.hud_status = 'offline';
+    broadcastHudUpdate();
+    return;
+  }
 
   try {
+    if (apiSpec.mode === 'cognitive') {
+      await ensureBackendSession(apiSpec);
+    }
+
     for (const s of toSend) {
-      const resp = await fetch(config.api_url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(s),
-        signal: AbortSignal.timeout(10000)
-      });
+      let resp;
+      if (apiSpec.mode === 'legacy') {
+        resp = await fetch(apiSpec.snapshotUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(s),
+          signal: AbortSignal.timeout(10000)
+        });
+      } else {
+        const snapshotUrl = `${apiSpec.sessionsUrl}/${state.backend_session_id}/snapshots`;
+        resp = await fetch(snapshotUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(buildSnapshotEnvelope(s)),
+          signal: AbortSignal.timeout(10000)
+        });
+      }
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
 
       // Parse backend response for cognitive state label
       let data = null;
       try { data = await resp.json(); } catch (_) {}
-      if (data?.cognitive_state) {
-        state.last_feedback = data;
+      const stateLabel = extractCognitiveStateLabel(data);
+      if (stateLabel) {
+        state.last_feedback = { cognitive_state: stateLabel, raw: data };
       }
     }
 
@@ -330,7 +489,15 @@ function buildStatusPayload() {
 // ----------------------------------------------------------------
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   (async () => {
-    if (!state && message.type !== 'INIT') {
+    const allowedWithoutState = new Set([
+      'INIT',
+      'GET_STATUS',
+      'DISABLE_MONITORING',
+      'ENABLE_MONITORING',
+      'OPEN_SIDEPANEL'
+    ]);
+
+    if (!state && !allowedWithoutState.has(message.type)) {
       sendResponse({ ok: false, reason: 'not_initialized' });
       return;
     }
@@ -400,7 +567,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         // 2. Kill the sync alarm
         chrome.alarms.clear('cogni_sync');
         // 3. Persist disabled state (keeps config so re-enable is instant)
-        await chrome.storage.local.set({ monitoring_enabled: false });
+        await chrome.storage.local.set({
+          monitoring_enabled: false,
+          monitoring_paused: false,
+          backend_session_id: null
+        });
         // 4. Clear in-memory state
         state = null;
         sendResponse({ ok: true });

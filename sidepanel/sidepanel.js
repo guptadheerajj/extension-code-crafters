@@ -31,6 +31,23 @@ function isValidUrl(str) {
   try { new URL(str); return true; } catch { return false; }
 }
 
+function normalizeEndpointInput(raw) {
+  const trimmed = (raw || '').trim();
+  if (!trimmed) return '';
+  try {
+    const url = new URL(trimmed);
+    if (url.pathname === '/docs') {
+      url.pathname = '/api/v1';
+      url.search = '';
+      url.hash = '';
+      return url.toString().replace(/\/$/, '');
+    }
+    return trimmed;
+  } catch {
+    return trimmed;
+  }
+}
+
 // ── Active screen auto-refresh ───────────────────────────────
 let activeRefreshInterval = null;
 
@@ -143,7 +160,8 @@ document.getElementById('btn-config-back').addEventListener('click', () => {
 });
 
 document.getElementById('btn-start-monitoring').addEventListener('click', async () => {
-  const apiUrl      = document.getElementById('api-url-input').value.trim();
+  const rawApiUrl   = document.getElementById('api-url-input').value;
+  const apiUrl      = normalizeEndpointInput(rawApiUrl);
   const errorEl     = document.getElementById('api-url-error');
   const labelEl     = document.getElementById('btn-start-label');
   const spinnerEl   = document.getElementById('btn-start-spinner');
@@ -153,10 +171,12 @@ document.getElementById('btn-start-monitoring').addEventListener('click', async 
   errorEl.classList.remove('visible');
 
   if (!isValidUrl(apiUrl)) {
-    errorEl.textContent = 'Please enter a valid URL (e.g. http://localhost:8000/api/snapshot)';
+    errorEl.textContent = 'Please enter a valid URL (e.g. http://127.0.0.1:8000/api/v1 or http://127.0.0.1:8000/docs)';
     errorEl.classList.add('visible');
     return;
   }
+
+  document.getElementById('api-url-input').value = apiUrl;
 
   // Show loading state
   labelEl.style.display = 'none';
@@ -222,6 +242,23 @@ document.getElementById('btn-reconfigure').addEventListener('click', async () =>
 
   stopActiveRefresh();
   showScreen(screenConfig);
+});
+
+document.getElementById('btn-stop').addEventListener('click', () => {
+  chrome.runtime.sendMessage({ type: 'DISABLE_MONITORING' }, (resp) => {
+    if (chrome.runtime.lastError || !resp?.ok) return;
+    setStoppedUI(true);
+    stopActiveRefresh();
+  });
+});
+
+document.getElementById('btn-reenable').addEventListener('click', async () => {
+  chrome.runtime.sendMessage({ type: 'ENABLE_MONITORING' }, async (resp) => {
+    if (chrome.runtime.lastError || !resp?.ok) return;
+    await updateActiveScreen();
+    setStoppedUI(false);
+    startActiveRefresh();
+  });
 });
 
 // Listen for background HUD_UPDATE messages (update active screen in real-time)
