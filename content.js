@@ -606,214 +606,364 @@
 		// ----- CSS -----
 		const style = document.createElement("style");
 		style.textContent = `
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap');
+		@import url('https://fonts.googleapis.com/css2?family=Lora:wght@600;700&family=Manrope:wght@400;500;600;700&display=swap');
 
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+		:host {
+			--bg: #141313;
+			--bg-soft: #1d1b1a;
+			--surface: #23201d;
+			--surface-2: #2b2723;
+			--border: #3b352f;
+			--border-hover: #4a433b;
+			--text-primary: #f2ece2;
+			--text-secondary: #c8bcad;
+			--text-muted: #988a78;
+			--accent: #84a4bf;
+			--accent-strong: #9cb7ce;
+			--accent-soft: rgba(132, 164, 191, 0.2);
+			--green: #58b487;
+			--red: #d67b6b;
+			--yellow: #d5ae62;
+			--paused: #868079;
+		}
 
-    #cogni-hud {
-      position: fixed;
-      bottom: 24px;
-      right: 24px;
-      z-index: 2147483647;
-      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-      font-size: 13px;
-      user-select: none;
-    }
+		*, *::before, *::after {
+			box-sizing: border-box;
+			margin: 0;
+			padding: 0;
+		}
 
-    #cogni-card {
-      background: rgba(10, 10, 20, 0.88);
-      backdrop-filter: blur(24px) saturate(180%);
-      -webkit-backdrop-filter: blur(24px) saturate(180%);
-      border: 1px solid rgba(255, 255, 255, 0.07);
-      border-radius: 18px;
-      padding: 14px 16px;
-      min-width: 228px;
-      max-width: 260px;
-      box-shadow:
-        0 12px 40px rgba(0, 0, 0, 0.5),
-        0 2px 8px rgba(0, 0, 0, 0.3),
-        inset 0 1px 0 rgba(255, 255, 255, 0.05);
-      color: #dde0f0;
-      opacity: 0.65;
-      transition: opacity 0.25s ease, transform 0.3s cubic-bezier(.4,0,.2,1), min-width 0.3s ease, border-radius 0.3s ease;
+		#cogni-hud {
+			position: fixed;
+			bottom: 24px;
+			right: 24px;
+			z-index: 2147483647;
+			font-family: 'Manrope', 'Segoe UI', sans-serif;
+			font-size: 13px;
+			user-select: none;
+		}
+
+		#cogni-card {
+			background: linear-gradient(180deg, rgba(43, 39, 35, 0.94) 0%, rgba(32, 29, 26, 0.94) 100%);
+			backdrop-filter: blur(18px) saturate(125%);
+			-webkit-backdrop-filter: blur(18px) saturate(125%);
+			border: 1px solid var(--border);
+			border-radius: 18px;
+			padding: 14px 16px;
+			min-width: 228px;
+			max-width: 270px;
+			box-shadow:
+				0 16px 38px rgba(0, 0, 0, 0.5),
+				0 3px 10px rgba(0, 0, 0, 0.35),
+				inset 0 1px 0 rgba(255, 255, 255, 0.04);
+			color: var(--text-primary);
+			opacity: 0.75;
+			transition: opacity 0.25s ease, transform 0.3s cubic-bezier(.4, 0, .2, 1), min-width 0.3s ease, border-radius 0.3s ease, border-color 0.2s ease;
 			cursor: pointer;
-    }
+		}
 
-    #cogni-card:hover { opacity: 1; }
+		#cogni-card:hover {
+			opacity: 1;
+			border-color: var(--border-hover);
+		}
 
-    /* COLLAPSED STATE */
-    #cogni-card.collapsed {
-      min-width: 0;
-      width: 44px;
-      height: 44px;
-      padding: 0;
-      border-radius: 50%;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      cursor: pointer;
-      overflow: hidden;
-    }
-    #cogni-card.collapsed .cogni-header,
-    #cogni-card.collapsed .cogni-status-row,
-    #cogni-card.collapsed .cogni-divider,
-    #cogni-card.collapsed .cogni-info,
-    #cogni-card.collapsed .cogni-badge,
-    #cogni-card.collapsed .cogni-footer,
-    #cogni-card.collapsed .cogni-offline-msg {
-      display: none !important;
-    }
-    #cogni-card.collapsed .cogni-collapsed-dot { display: block !important; }
+		#cogni-card.collapsed {
+			min-width: 0;
+			width: 44px;
+			height: 44px;
+			padding: 0;
+			border-radius: 50%;
+			display: flex;
+			align-items: center;
+			justify-content: center;
+			cursor: pointer;
+			overflow: hidden;
+		}
 
-    /* HEADER */
-    .cogni-header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      margin-bottom: 11px;
-    }
-    .cogni-title-group {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-    .cogni-logo {
-      width: 22px; height: 22px;
-      border-radius: 7px;
-      background: linear-gradient(135deg, #6366f1, #8b5cf6);
-      display: flex; align-items: center; justify-content: center;
-      font-size: 11px;
-      box-shadow: 0 0 10px rgba(99, 102, 241, 0.4);
-    }
-    .cogni-title {
-      font-size: 11px;
-      font-weight: 600;
-      color: #7c7ca8;
-      letter-spacing: 0.08em;
-      text-transform: uppercase;
-    }
-    .cogni-collapse-btn {
-      background: none;
-      border: none;
-      cursor: pointer;
-      color: #4a4a70;
-      width: 22px; height: 22px;
-      border-radius: 6px;
-      font-size: 16px;
-      line-height: 1;
-      display: flex; align-items: center; justify-content: center;
-      transition: color 0.15s, background 0.15s;
-    }
-    .cogni-collapse-btn:hover { color: #a0a0c8; background: rgba(255,255,255,0.06); }
+		#cogni-card.collapsed .cogni-header,
+		#cogni-card.collapsed .cogni-status-row,
+		#cogni-card.collapsed .cogni-divider,
+		#cogni-card.collapsed .cogni-info,
+		#cogni-card.collapsed .cogni-badge,
+		#cogni-card.collapsed .cogni-footer,
+		#cogni-card.collapsed .cogni-offline-msg {
+			display: none !important;
+		}
 
-    /* STATUS ROW */
-    .cogni-status-row {
-      display: flex;
-      align-items: center;
-      gap: 9px;
-      margin-bottom: 6px;
-    }
-    .cogni-dot {
-      width: 9px; height: 9px;
-      border-radius: 50%;
-      flex-shrink: 0;
-      position: relative;
-    }
-    .cogni-dot::after {
-      content: '';
-      position: absolute;
-      inset: -3px;
-      border-radius: 50%;
-      animation: cogni-pulse 2.2s ease-in-out infinite;
-    }
-    .cogni-dot.active  { background: #22c55e; }
-    .cogni-dot.active::after  { background: rgba(34,197,94,0.25); }
-    .cogni-dot.offline { background: #ef4444; }
-    .cogni-dot.offline::after { animation: none; background: rgba(239,68,68,0.2); }
-    .cogni-dot.idle    { background: #f59e0b; }
-    .cogni-dot.idle::after    { background: rgba(245,158,11,0.25); animation-duration: 3s; }
+		#cogni-card.collapsed .cogni-collapsed-dot {
+			display: block !important;
+		}
 
-    @keyframes cogni-pulse {
-      0%, 100% { opacity: 0.15; transform: scale(1); }
-      50%       { opacity: 0.55; transform: scale(2); }
-    }
+		.cogni-header {
+			display: flex;
+			align-items: center;
+			justify-content: space-between;
+			margin-bottom: 11px;
+		}
 
-    .cogni-status-text  { font-size: 13px; font-weight: 500; color: #dde0f0; }
-    .cogni-offline-msg  { font-size: 11px; color: #f87171; margin-bottom: 6px; margin-left: 18px; }
+		.cogni-title-group {
+			display: flex;
+			align-items: center;
+			gap: 8px;
+		}
 
-    /* COLLAPSED DOT */
-    .cogni-collapsed-dot {
-      display: none;
-      width: 14px; height: 14px;
-      border-radius: 50%;
-    }
-    .cogni-collapsed-dot.active  { background: #22c55e; box-shadow: 0 0 8px rgba(34,197,94,0.7); }
-    .cogni-collapsed-dot.offline { background: #ef4444; box-shadow: 0 0 8px rgba(239,68,68,0.7); }
-    .cogni-collapsed-dot.idle    { background: #f59e0b; box-shadow: 0 0 8px rgba(245,158,11,0.7); }
+		.cogni-logo {
+			width: 22px;
+			height: 22px;
+			border-radius: 7px;
+			background: linear-gradient(140deg, var(--accent), var(--accent-strong));
+			display: flex;
+			align-items: center;
+			justify-content: center;
+			font-size: 11px;
+			box-shadow: 0 0 12px rgba(132, 164, 191, 0.36);
+		}
 
-    /* DIVIDER */
-    .cogni-divider { height: 1px; background: rgba(255,255,255,0.05); margin: 9px 0; }
+		.cogni-title {
+			font-family: 'Lora', Georgia, serif;
+			font-size: 12px;
+			font-weight: 600;
+			color: var(--text-secondary);
+			letter-spacing: 0.05em;
+		}
 
-    /* INFO GRID */
-    .cogni-info { display: flex; flex-direction: column; gap: 5px; }
-    .cogni-info-row { display: flex; justify-content: space-between; align-items: center; }
-    .cogni-info-label { font-size: 11px; color: #4a4a70; }
-    .cogni-info-value { font-size: 11px; color: #8888b0; font-variant-numeric: tabular-nums; }
+		.cogni-collapse-btn {
+			background: none;
+			border: none;
+			cursor: pointer;
+			color: var(--text-muted);
+			width: 22px;
+			height: 22px;
+			border-radius: 6px;
+			font-size: 16px;
+			line-height: 1;
+			display: flex;
+			align-items: center;
+			justify-content: center;
+			transition: color 0.15s, background 0.15s;
+		}
 
-    /* COGNITIVE STATE BADGE */
-    .cogni-badge {
-      margin-top: 10px;
-      padding: 7px 12px;
-      background: linear-gradient(135deg, rgba(99,102,241,0.15), rgba(139,92,246,0.15));
-      border: 1px solid rgba(139,92,246,0.3);
-      border-radius: 10px;
-      text-align: center;
-      font-size: 12px;
-      font-weight: 600;
-      color: #a78bfa;
-      letter-spacing: 0.04em;
-      text-transform: capitalize;
-      animation: cogni-badge-glow 3s ease-in-out infinite alternate;
-    }
-    @keyframes cogni-badge-glow {
-      from { box-shadow: 0 0 0px rgba(139,92,246,0); }
-      to   { box-shadow: 0 0 12px rgba(139,92,246,0.25); }
-    }
+		.cogni-collapse-btn:hover {
+			color: var(--text-primary);
+			background: rgba(255, 255, 255, 0.08);
+		}
 
-    /* FOOTER */
-    .cogni-footer { margin-top: 10px; }
-    .cogni-btn {
-      width: 100%;
-      padding: 6px 10px;
-      background: rgba(255,255,255,0.04);
-      border: 1px solid rgba(255,255,255,0.07);
-      border-radius: 9px;
-      color: #6060a0;
-      font-size: 11px;
-      cursor: pointer;
-      transition: all 0.15s;
-      font-family: inherit;
-      text-align: center;
-    }
-    .cogni-btn:hover { background: rgba(255,255,255,0.09); color: #c0c0e0; border-color: rgba(255,255,255,0.12); }
-    .cogni-btn.pause-active { background: rgba(239,68,68,0.12); border-color: rgba(239,68,68,0.25); color: #f87171; }
-    .cogni-btn.pause-active:hover { background: rgba(239,68,68,0.2); }
+		.cogni-status-row {
+			display: flex;
+			align-items: center;
+			gap: 9px;
+			margin-bottom: 6px;
+		}
 
-    /* STOP button */
-    .cogni-stop-btn { flex: 0 0 28px !important; padding: 0 !important; font-size: 13px; }
-    .cogni-stop-btn:hover { background: rgba(239,68,68,0.15) !important; border-color: rgba(239,68,68,0.3) !important; }
+		.cogni-dot {
+			width: 9px;
+			height: 9px;
+			border-radius: 50%;
+			flex-shrink: 0;
+			position: relative;
+		}
 
-    /* SETTINGS icon button */
-    .cogni-icon-btn { flex: 0 0 28px !important; padding: 0 !important; font-size: 13px; }
+		.cogni-dot::after {
+			content: '';
+			position: absolute;
+			inset: -3px;
+			border-radius: 50%;
+			animation: cogni-pulse 2.2s ease-in-out infinite;
+		}
 
-    /* PAUSED state */
-    .cogni-dot.paused { background: #6b7280; }
-    .cogni-dot.paused::after { background: rgba(107,114,128,0.2); animation: none; }
-    .cogni-collapsed-dot.paused { background: #6b7280; box-shadow: 0 0 6px rgba(107,114,128,0.5); }
+		.cogni-dot.active {
+			background: var(--green);
+		}
 
-    /* Three-button footer: [---Pause---][Stop][⚙] */
-    .cogni-footer { margin-top: 10px; display: flex; gap: 5px; }
-    .cogni-footer .cogni-btn { width: auto; flex: 1; }
+		.cogni-dot.active::after {
+			background: rgba(88, 180, 135, 0.25);
+		}
+
+		.cogni-dot.offline {
+			background: var(--red);
+		}
+
+		.cogni-dot.offline::after {
+			animation: none;
+			background: rgba(214, 123, 107, 0.24);
+		}
+
+		.cogni-dot.idle {
+			background: var(--yellow);
+		}
+
+		.cogni-dot.idle::after {
+			background: rgba(213, 174, 98, 0.24);
+			animation-duration: 3s;
+		}
+
+		@keyframes cogni-pulse {
+			0%, 100% {
+				opacity: 0.15;
+				transform: scale(1);
+			}
+			50% {
+				opacity: 0.55;
+				transform: scale(2);
+			}
+		}
+
+		.cogni-status-text {
+			font-size: 13px;
+			font-weight: 600;
+			color: var(--text-primary);
+		}
+
+		.cogni-offline-msg {
+			font-size: 11px;
+			color: var(--red);
+			margin-bottom: 6px;
+			margin-left: 18px;
+		}
+
+		.cogni-collapsed-dot {
+			display: none;
+			width: 14px;
+			height: 14px;
+			border-radius: 50%;
+		}
+
+		.cogni-collapsed-dot.active {
+			background: var(--green);
+			box-shadow: 0 0 8px rgba(88, 180, 135, 0.72);
+		}
+
+		.cogni-collapsed-dot.offline {
+			background: var(--red);
+			box-shadow: 0 0 8px rgba(214, 123, 107, 0.72);
+		}
+
+		.cogni-collapsed-dot.idle {
+			background: var(--yellow);
+			box-shadow: 0 0 8px rgba(213, 174, 98, 0.72);
+		}
+
+		.cogni-divider {
+			height: 1px;
+			background: rgba(255, 255, 255, 0.08);
+			margin: 9px 0;
+		}
+
+		.cogni-info {
+			display: flex;
+			flex-direction: column;
+			gap: 5px;
+		}
+
+		.cogni-info-row {
+			display: flex;
+			justify-content: space-between;
+			align-items: center;
+		}
+
+		.cogni-info-label {
+			font-size: 11px;
+			color: var(--text-muted);
+		}
+
+		.cogni-info-value {
+			font-size: 11px;
+			color: var(--text-secondary);
+			font-variant-numeric: tabular-nums;
+		}
+
+		.cogni-badge {
+			margin-top: 10px;
+			padding: 7px 12px;
+			background: rgba(132, 164, 191, 0.12);
+			border: 1px solid rgba(132, 164, 191, 0.45);
+			border-radius: 10px;
+			text-align: center;
+			font-size: 12px;
+			font-weight: 600;
+			color: var(--accent-strong);
+			letter-spacing: 0.04em;
+			text-transform: capitalize;
+			animation: cogni-badge-glow 3s ease-in-out infinite alternate;
+		}
+
+		@keyframes cogni-badge-glow {
+			from {
+				box-shadow: 0 0 0 rgba(132, 164, 191, 0);
+			}
+			to {
+				box-shadow: 0 0 12px rgba(132, 164, 191, 0.24);
+			}
+		}
+
+		.cogni-footer {
+			margin-top: 10px;
+			display: flex;
+			gap: 5px;
+		}
+
+		.cogni-btn {
+			width: auto;
+			flex: 1;
+			padding: 6px 10px;
+			background: var(--surface);
+			border: 1px solid var(--border);
+			border-radius: 9px;
+			color: var(--text-secondary);
+			font-size: 11px;
+			cursor: pointer;
+			transition: all 0.15s;
+			font-family: inherit;
+			text-align: center;
+		}
+
+		.cogni-btn:hover {
+			background: var(--surface-2);
+			color: var(--text-primary);
+			border-color: var(--border-hover);
+		}
+
+		.cogni-btn.pause-active {
+			background: rgba(214, 123, 107, 0.16);
+			border-color: rgba(214, 123, 107, 0.4);
+			color: #efb3a8;
+		}
+
+		.cogni-btn.pause-active:hover {
+			background: rgba(214, 123, 107, 0.24);
+		}
+
+		.cogni-stop-btn {
+			flex: 0 0 28px !important;
+			padding: 0 !important;
+			font-size: 13px;
+		}
+
+		.cogni-stop-btn:hover {
+			background: rgba(214, 123, 107, 0.22) !important;
+			border-color: rgba(214, 123, 107, 0.5) !important;
+			color: #ffd8d1 !important;
+		}
+
+		.cogni-icon-btn {
+			flex: 0 0 28px !important;
+			padding: 0 !important;
+			font-size: 13px;
+		}
+
+		.cogni-dot.paused {
+			background: var(--paused);
+		}
+
+		.cogni-dot.paused::after {
+			background: rgba(134, 128, 121, 0.2);
+			animation: none;
+		}
+
+		.cogni-collapsed-dot.paused {
+			background: var(--paused);
+			box-shadow: 0 0 6px rgba(134, 128, 121, 0.5);
+		}
   `;
 		shadow.appendChild(style);
 
