@@ -10,6 +10,17 @@
 let config = null;
 let state = null;
 
+const DISTRACTING_DOMAINS = [
+	"facebook.com",
+	"instagram.com",
+	"x.com",
+	"twitter.com",
+	"tiktok.com",
+	"reddit.com",
+	"snapchat.com",
+	"pinterest.com",
+];
+
 function initState(sessionId) {
 	state = {
 		session_id: sessionId,
@@ -135,6 +146,33 @@ function extractDomain(url) {
 	}
 }
 
+function normalizeDomain(hostname) {
+	return (hostname || "").toLowerCase().replace(/^www\./, "");
+}
+
+function isDistractingUrl(url) {
+	try {
+		const hostname = normalizeDomain(new URL(url).hostname);
+		if (!hostname) return false;
+		return DISTRACTING_DOMAINS.some(
+			(domain) => hostname === domain || hostname.endsWith(`.${domain}`),
+		);
+	} catch {
+		return false;
+	}
+}
+
+async function sendDistractingStateToTab(tabId, url) {
+	if (!Number.isInteger(tabId)) return;
+	const distracting = isDistractingUrl(url || "");
+	try {
+		await chrome.tabs.sendMessage(tabId, {
+			type: "DISTRACTION_SITE_STATE",
+			distracting,
+		});
+	} catch (_) {}
+}
+
 async function updateCurrentTab() {
 	if (!state) return;
 	const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -142,6 +180,7 @@ async function updateCurrentTab() {
 		state.tab.url = tab.url || "";
 		state.tab.domain = extractDomain(tab.url || "");
 		state.tab.tab_start_time = Date.now();
+		await sendDistractingStateToTab(tab.id, tab.url || "");
 	}
 	const allTabs = await chrome.tabs.query({ currentWindow: true });
 	state.tab.tab_count = allTabs.length;
@@ -177,6 +216,7 @@ chrome.tabs.onActivated.addListener(async (activeInfo) => {
 	try {
 		const tab = await chrome.tabs.get(activeInfo.tabId);
 		recordTabSwitch(tab.url || "");
+		await sendDistractingStateToTab(tab.id, tab.url || "");
 		const allTabs = await chrome.tabs.query({ currentWindow: true });
 		state.tab.tab_count = allTabs.length;
 	} catch (_) {}
@@ -191,6 +231,7 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
 	});
 	if (activeTab && activeTab.id === tabId) {
 		recordTabSwitch(changeInfo.url);
+		await sendDistractingStateToTab(tabId, changeInfo.url || tab.url || "");
 	}
 });
 
@@ -204,6 +245,7 @@ chrome.webNavigation.onCompleted.addListener(async (details) => {
 		state.tab.page_visible = true;
 		state.tab.url = details.url;
 		state.tab.domain = extractDomain(details.url);
+		await sendDistractingStateToTab(details.tabId, details.url || "");
 	}
 });
 
@@ -530,6 +572,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 		const allowedWithoutState = new Set([
 			"INIT",
 			"GET_STATUS",
+			"GET_DISTRACTION_STATE",
 			"DISABLE_MONITORING",
 			"ENABLE_MONITORING",
 			"OPEN_SIDEPANEL",
@@ -594,6 +637,19 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 					});
 				}
 				break;
+
+			case "GET_DISTRACTION_STATE": {
+				let distracting = false;
+				try {
+					const senderTabId = sender?.tab?.id;
+					if (Number.isInteger(senderTabId)) {
+						const tab = await chrome.tabs.get(senderTabId);
+						distracting = isDistractingUrl(tab?.url || "");
+					}
+				} catch (_) {}
+				sendResponse({ ok: true, distracting });
+				break;
+			}
 
 			case "OPEN_SIDEPANEL":
 				{

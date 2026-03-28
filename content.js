@@ -18,12 +18,128 @@
 	// ----------------------------------------------------------------
 	let _contextAlive = true;
 	const _intervalIds = [];
+	const DISTRACTION_STYLE_ID = "__cogni-sense-distracting-style__";
+	const DISTRACTION_CLASS = "__cogni-sense-distracting-tab__";
+
+	function ensureDistractingStyle() {
+		if (document.getElementById(DISTRACTION_STYLE_ID)) return;
+		const style = document.createElement("style");
+		style.id = DISTRACTION_STYLE_ID;
+		style.textContent = `
+			html.${DISTRACTION_CLASS}::before,
+			html.${DISTRACTION_CLASS}::after {
+        content: "";
+        position: fixed;
+        inset: 0;
+        pointer-events: none;
+        z-index: 2147483646;
+				will-change: opacity, transform, box-shadow, filter, border-color, border-width;
+      }
+
+			html.${DISTRACTION_CLASS}::before {
+				box-sizing: border-box;
+				border: 12px solid #b91c1c;
+				box-shadow:
+					inset 0 0 0 2px rgba(255, 230, 230, 0.7),
+					0 0 0 6px rgba(220, 38, 38, 0.5),
+					0 0 56px 16px rgba(220, 38, 38, 0.68);
+				animation:
+					cogni-distraction-pulse 1.1s ease-in-out infinite,
+					cogni-distraction-border-phase 1.8s linear infinite;
+			}
+
+			html.${DISTRACTION_CLASS}::after {
+				inset: -14px;
+				box-sizing: border-box;
+				border: 14px solid rgba(239, 68, 68, 0.85);
+				filter: blur(18px);
+				opacity: 0.72;
+				transform: scale(1.003);
+				animation: cogni-distraction-glow 1.1s ease-in-out infinite;
+			}
+
+			@keyframes cogni-distraction-pulse {
+				0%, 100% {
+					border-color: #b91c1c;
+					border-width: 11px;
+					box-shadow:
+						inset 0 0 0 2px rgba(255, 230, 230, 0.7),
+						0 0 0 6px rgba(220, 38, 38, 0.5),
+						0 0 56px 16px rgba(220, 38, 38, 0.68);
+				}
+				50% {
+					border-color: #ef4444;
+					border-width: 14px;
+					box-shadow:
+						inset 0 0 0 2px rgba(255, 240, 240, 0.9),
+						0 0 0 10px rgba(220, 38, 38, 0.75),
+						0 0 78px 26px rgba(220, 38, 38, 0.9);
+				}
+			}
+
+			@keyframes cogni-distraction-border-phase {
+				0% {
+					border-color: #7f1d1d;
+				}
+				33% {
+					border-color: #dc2626;
+				}
+				66% {
+					border-color: #ef4444;
+				}
+				100% {
+					border-color: #7f1d1d;
+				}
+			}
+
+			@keyframes cogni-distraction-glow {
+				0%, 100% {
+					filter: blur(16px);
+					opacity: 0.68;
+					transform: scale(1.001);
+				}
+				50% {
+					filter: blur(24px);
+					opacity: 0.98;
+					transform: scale(1.01);
+				}
+			}
+
+			@media (prefers-reduced-motion: reduce) {
+				html.${DISTRACTION_CLASS}::before,
+				html.${DISTRACTION_CLASS}::after {
+					animation: none;
+				}
+			}
+    `;
+		const parent = document.head || document.documentElement;
+		if (parent) parent.appendChild(style);
+	}
+
+	function setDistractingOutline(isDistracting) {
+		const root = document.documentElement;
+		if (!root) return;
+		if (isDistracting) {
+			ensureDistractingStyle();
+			root.classList.add(DISTRACTION_CLASS);
+		} else {
+			root.classList.remove(DISTRACTION_CLASS);
+		}
+	}
+
+	function clearDistractingOutline() {
+		const root = document.documentElement;
+		if (root) root.classList.remove(DISTRACTION_CLASS);
+		const style = document.getElementById(DISTRACTION_STYLE_ID);
+		if (style) style.remove();
+	}
 
 	/** Remove HUD from DOM and kill all intervals. Called on extension disable or reload. */
 	function teardown() {
 		if (!_contextAlive) return; // already torn down
 		_contextAlive = false;
 		_intervalIds.forEach(clearInterval);
+		clearDistractingOutline();
 		// Remove the injected HUD element immediately so it doesn't linger
 		const hudRoot = document.getElementById("__cogni-sense-hud-root__");
 		if (hudRoot) hudRoot.remove();
@@ -88,10 +204,24 @@
 	// Top-level FORCE_TEARDOWN listener (works even before HUD is injected)
 	try {
 		chrome.runtime.onMessage.addListener((msg) => {
-			if (msg.type === "FORCE_TEARDOWN") teardown();
+			if (msg.type === "FORCE_TEARDOWN") {
+				teardown();
+				return false;
+			}
+			if (msg.type === "DISTRACTION_SITE_STATE") {
+				setDistractingOutline(Boolean(msg.distracting));
+				return false;
+			}
 			return false;
 		});
 	} catch (_) {}
+
+	// Ask background for the current tab's distraction state on startup.
+	safeSendMessage({ type: "GET_DISTRACTION_STATE" }, (resp) => {
+		if (resp && typeof resp.distracting === "boolean") {
+			setDistractingOutline(resp.distracting);
+		}
+	});
 
 	// ----------------------------------------------------------------
 	// THROTTLE UTILITY
