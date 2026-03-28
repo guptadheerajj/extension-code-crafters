@@ -602,6 +602,7 @@
 		document.body.appendChild(hostEl);
 
 		const shadow = hostEl.attachShadow({ mode: "open" });
+		const hudLogoUrl = chrome.runtime.getURL("icons/logo-square.png");
 
 		// ----- CSS -----
 		const style = document.createElement("style");
@@ -708,15 +709,25 @@
 		}
 
 		.cogni-logo {
-			width: 22px;
-			height: 22px;
-			border-radius: 7px;
-			background: linear-gradient(140deg, var(--accent), var(--accent-strong));
+			width: 26px;
+			height: 26px;
+			padding: 2px;
+			border-radius: 8px;
+			border: 1px solid rgba(132, 164, 191, 0.32);
+			background: rgba(132, 164, 191, 0.12);
 			display: flex;
 			align-items: center;
 			justify-content: center;
-			font-size: 11px;
-			box-shadow: 0 0 12px rgba(132, 164, 191, 0.36);
+			overflow: hidden;
+			box-shadow: 0 0 12px rgba(132, 164, 191, 0.32);
+		}
+
+		.cogni-logo img {
+			width: 100%;
+			height: 100%;
+			object-fit: contain;
+			display: block;
+			filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.35));
 		}
 
 		.cogni-title {
@@ -875,6 +886,10 @@
 		.cogni-badge {
 			margin-top: 10px;
 			padding: 7px 12px;
+			display: flex;
+			align-items: center;
+			justify-content: center;
+			gap: 7px;
 			background: rgba(132, 164, 191, 0.12);
 			border: 1px solid rgba(132, 164, 191, 0.45);
 			border-radius: 10px;
@@ -885,6 +900,15 @@
 			letter-spacing: 0.04em;
 			text-transform: capitalize;
 			animation: cogni-badge-glow 3s ease-in-out infinite alternate;
+		}
+
+		.cogni-badge::before {
+			content: '';
+			width: 14px;
+			height: 14px;
+			background: url('${hudLogoUrl}') center/contain no-repeat;
+			opacity: 0.95;
+			flex: 0 0 14px;
 		}
 
 		@keyframes cogni-badge-glow {
@@ -978,7 +1002,7 @@
         <!-- Header -->
         <div class="cogni-header">
           <div class="cogni-title-group">
-            <div class="cogni-logo">🧠</div>
+							<div class="cogni-logo"><img src="${hudLogoUrl}" alt="CogniSense logo"></div>
             <span class="cogni-title">CogniSense</span>
           </div>
           <button class="cogni-collapse-btn" id="cogni-collapse-btn" title="Minimize">−</button>
@@ -1146,7 +1170,7 @@
 			: formatLastSync(data.last_sync);
 
 		if (data.cognitive_state && !data.paused) {
-			badgeEl.textContent = `🧠 ${data.cognitive_state}`;
+			badgeEl.textContent = data.cognitive_state;
 			badgeEl.style.display = "block";
 		} else {
 			badgeEl.style.display = "none";

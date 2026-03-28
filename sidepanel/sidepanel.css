@@ -90,10 +90,19 @@ body {
 }
 
 .hero-logo {
-	display: block;
-	font-size: 46px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
 	margin-bottom: 10px;
 	animation: hero-float 3.8s ease-in-out infinite;
+}
+
+.hero-logo img {
+	width: 94px;
+	height: 94px;
+	object-fit: contain;
+	display: block;
+	filter: drop-shadow(0 12px 16px rgba(0, 0, 0, 0.35));
 }
 
 @keyframes hero-float {
@@ -584,7 +593,16 @@ body {
 .active-brain {
 	position: relative;
 	z-index: 1;
-	font-size: 34px;
+	width: 46px;
+	height: 46px;
+}
+
+.active-brain img {
+	width: 100%;
+	height: 100%;
+	object-fit: contain;
+	display: block;
+	filter: drop-shadow(0 6px 8px rgba(0, 0, 0, 0.28));
 }
 
 .active-title {

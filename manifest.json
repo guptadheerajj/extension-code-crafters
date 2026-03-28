@@ -1,50 +1,57 @@
 {
-  "manifest_version": 3,
-  "name": "CogniSense — Cognitive State Monitor",
-  "version": "1.0.0",
-  "description": "Passively monitors behavioral signals to infer your cognitive state and boost productivity.",
+	"manifest_version": 3,
+	"name": "CogniSense — Cognitive State Monitor",
+	"version": "1.0.0",
+	"description": "Passively monitors behavioral signals to infer your cognitive state and boost productivity.",
 
-  "permissions": [
-    "tabs",
-    "storage",
-    "idle",
-    "webNavigation",
-    "scripting",
-    "sidePanel",
-    "activeTab",
-    "alarms"
-  ],
+	"permissions": [
+		"tabs",
+		"storage",
+		"idle",
+		"webNavigation",
+		"scripting",
+		"sidePanel",
+		"activeTab",
+		"alarms"
+	],
 
-  "host_permissions": ["<all_urls>"],
+	"host_permissions": ["<all_urls>"],
 
-  "background": {
-    "service_worker": "background.js"
-  },
+	"background": {
+		"service_worker": "background.js"
+	},
 
-  "content_scripts": [
-    {
-      "matches": ["http://*/*", "https://*/*"],
-      "js": ["content.js"],
-      "run_at": "document_idle"
-    }
-  ],
+	"content_scripts": [
+		{
+			"matches": ["http://*/*", "https://*/*"],
+			"js": ["content.js"],
+			"run_at": "document_idle"
+		}
+	],
 
-  "side_panel": {
-    "default_path": "sidepanel/sidepanel.html"
-  },
+	"web_accessible_resources": [
+		{
+			"resources": ["icons/logo-square.png"],
+			"matches": ["<all_urls>"]
+		}
+	],
 
-  "action": {
-    "default_icon": {
-      "16": "icons/icon16.png",
-      "48": "icons/icon48.png",
-      "128": "icons/icon128.png"
-    },
-    "default_title": "CogniSense"
-  },
+	"side_panel": {
+		"default_path": "sidepanel/sidepanel.html"
+	},
 
-  "icons": {
-    "16": "icons/icon16.png",
-    "48": "icons/icon48.png",
-    "128": "icons/icon128.png"
-  }
+	"action": {
+		"default_icon": {
+			"16": "icons/icon16.png",
+			"48": "icons/icon48.png",
+			"128": "icons/icon128.png"
+		},
+		"default_title": "CogniSense"
+	},
+
+	"icons": {
+		"16": "icons/icon16.png",
+		"48": "icons/icon48.png",
+		"128": "icons/icon128.png"
+	}
 }
