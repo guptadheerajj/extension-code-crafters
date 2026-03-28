@@ -281,21 +281,23 @@ document
 	});
 
 // ── SCREEN 3: ACTIVE ─────────────────────────────────────────
-document.getElementById("btn-pause").addEventListener("click", () => {
-	const btn = document.getElementById("btn-pause");
-	chrome.runtime.sendMessage({ type: "TOGGLE_PAUSE" }, (resp) => {
-		if (chrome.runtime.lastError || !resp) return;
-		if (resp.paused) {
-			btn.textContent = "▶️ Resume Monitoring";
-			btn.classList.add("paused");
-		} else {
-			btn.textContent = "⏸️ Pause Monitoring";
-			btn.classList.remove("paused");
-		}
-		// Refresh stats immediately after toggle
-		updateActiveScreen();
+const pauseButton = document.getElementById("btn-pause");
+if (pauseButton) {
+	pauseButton.addEventListener("click", () => {
+		chrome.runtime.sendMessage({ type: "TOGGLE_PAUSE" }, (resp) => {
+			if (chrome.runtime.lastError || !resp) return;
+			if (resp.paused) {
+				pauseButton.textContent = "▶️ Resume Monitoring";
+				pauseButton.classList.add("paused");
+			} else {
+				pauseButton.textContent = "⏸️ Pause Monitoring";
+				pauseButton.classList.remove("paused");
+			}
+			// Refresh stats immediately after toggle
+			updateActiveScreen();
+		});
 	});
-});
+}
 
 document
 	.getElementById("btn-reconfigure")
