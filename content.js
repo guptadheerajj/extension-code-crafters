@@ -1,388 +1,481 @@
-// ============================================================
-// content.js — CogniSense Content Script
-// Injected into every page. Collects: keyboard, mouse, scroll,
-// page-content signals, and injects the floating HUD.
-// ============================================================
+(() => {
+	// ============================================================
+	// content.js — CogniSense Content Script
+	// Injected into every page. Collects: keyboard, mouse, scroll,
+	// page-content signals, and injects the floating HUD.
+	// ============================================================
 
-// Guard: prevent double-injection
-if (window.__cogniSenseInjected) {
-  throw new Error('[CogniSense] Already injected.');
-}
-window.__cogniSenseInjected = true;
+	// Guard: prevent double-injection
+	if (window.__cogniSenseInjected) {
+		return;
+	}
+	window.__cogniSenseInjected = true;
 
-// ----------------------------------------------------------------
-// SAFE RUNTIME BRIDGE
-// Prevents "Extension context invalidated" crashes after an extension
-// reload/disable while old content scripts are still alive in open tabs.
-// ----------------------------------------------------------------
-let _contextAlive = true;
-const _intervalIds = [];
+	// ----------------------------------------------------------------
+	// SAFE RUNTIME BRIDGE
+	// Prevents "Extension context invalidated" crashes after an extension
+	// reload/disable while old content scripts are still alive in open tabs.
+	// ----------------------------------------------------------------
+	let _contextAlive = true;
+	const _intervalIds = [];
 
-/** Remove HUD from DOM and kill all intervals. Called on extension disable or reload. */
-function teardown() {
-  if (!_contextAlive) return; // already torn down
-  _contextAlive = false;
-  _intervalIds.forEach(clearInterval);
-  // Remove the injected HUD element immediately so it doesn't linger
-  const hudRoot = document.getElementById('__cogni-sense-hud-root__');
-  if (hudRoot) hudRoot.remove();
-  // Clear the injection guard so a fresh content script can inject after re-enable
-  delete window.__cogniSenseInjected;
-}
+	/** Remove HUD from DOM and kill all intervals. Called on extension disable or reload. */
+	function teardown() {
+		if (!_contextAlive) return; // already torn down
+		_contextAlive = false;
+		_intervalIds.forEach(clearInterval);
+		// Remove the injected HUD element immediately so it doesn't linger
+		const hudRoot = document.getElementById("__cogni-sense-hud-root__");
+		if (hudRoot) hudRoot.remove();
+		// Clear the injection guard so a fresh content script can inject after re-enable
+		delete window.__cogniSenseInjected;
+	}
 
-function safeSendMessage(msg, callback) {
-  if (!_contextAlive) return;
-  if (!chrome.runtime?.id) { teardown(); return; }
-  try {
-    const p = chrome.runtime.sendMessage(msg, callback);
-    if (p && typeof p.catch === 'function') p.catch(() => {});
-  } catch (_) {
-    teardown();
-  }
-}
+	function safeSendMessage(msg, callback) {
+		if (!_contextAlive) return;
+		if (!chrome.runtime?.id) {
+			teardown();
+			return;
+		}
+		try {
+			const p = chrome.runtime.sendMessage(msg, callback);
+			if (p && typeof p.catch === "function") p.catch(() => {});
+		} catch (_) {
+			teardown();
+		}
+	}
 
-function safeInterval(fn, ms) {
-  const id = setInterval(() => {
-    if (!_contextAlive) { clearInterval(id); return; }
-    fn();
-  }, ms);
-  _intervalIds.push(id);
-  return id;
-}
+	function safeInterval(fn, ms) {
+		const id = setInterval(() => {
+			if (!_contextAlive) {
+				clearInterval(id);
+				return;
+			}
+			fn();
+		}, ms);
+		_intervalIds.push(id);
+		return id;
+	}
 
-// ================================================================
-// EXTENSION LIFECYCLE
-//
-// WHY NOT chrome.runtime.connect?
-// In MV3, Chrome terminates the service worker after ~30s of idle.
-// A port opened to the SW via connect() fires onDisconnect EVERY
-// TIME the SW sleeps — not just when the extension is disabled.
-// Using connect() for teardown detection causes false positives
-// that remove the HUD while the extension is still active.
-//
-// CORRECT APPROACH:
-// 1. Poll chrome.runtime.id every second (it becomes undefined only
-//    when the extension is truly disabled, not when SW sleeps).
-// 2. Listen for an explicit FORCE_TEARDOWN message broadcast by
-//    the background when the user clicks "Stop Monitoring".
-// ================================================================
+	// ================================================================
+	// EXTENSION LIFECYCLE
+	//
+	// WHY NOT chrome.runtime.connect?
+	// In MV3, Chrome terminates the service worker after ~30s of idle.
+	// A port opened to the SW via connect() fires onDisconnect EVERY
+	// TIME the SW sleeps — not just when the extension is disabled.
+	// Using connect() for teardown detection causes false positives
+	// that remove the HUD while the extension is still active.
+	//
+	// CORRECT APPROACH:
+	// 1. Poll chrome.runtime.id every second (it becomes undefined only
+	//    when the extension is truly disabled, not when SW sleeps).
+	// 2. Listen for an explicit FORCE_TEARDOWN message broadcast by
+	//    the background when the user clicks "Stop Monitoring".
+	// ================================================================
 
-// 1-second context watcher: detects real extension disable
-;(function startContextWatcher() {
-  const watcherId = setInterval(() => {
-    if (!_contextAlive) { clearInterval(watcherId); return; }
-    if (!chrome.runtime?.id) teardown();
-  }, 1000);
-})();
+	// 1-second context watcher: detects real extension disable
+	(function startContextWatcher() {
+		const watcherId = setInterval(() => {
+			if (!_contextAlive) {
+				clearInterval(watcherId);
+				return;
+			}
+			if (!chrome.runtime?.id) teardown();
+		}, 1000);
+	})();
 
-// Top-level FORCE_TEARDOWN listener (works even before HUD is injected)
-try {
-  chrome.runtime.onMessage.addListener((msg) => {
-    if (msg.type === 'FORCE_TEARDOWN') teardown();
-    return false;
-  });
-} catch (_) {}
+	// Top-level FORCE_TEARDOWN listener (works even before HUD is injected)
+	try {
+		chrome.runtime.onMessage.addListener((msg) => {
+			if (msg.type === "FORCE_TEARDOWN") teardown();
+			return false;
+		});
+	} catch (_) {}
 
-// ----------------------------------------------------------------
-// THROTTLE UTILITY
-// ----------------------------------------------------------------
-function throttle(fn, delay) {
-  let lastCall = 0;
-  return function (...args) {
-    const now = Date.now();
-    if (now - lastCall >= delay) {
-      lastCall = now;
-      fn.apply(this, args);
-    }
-  };
-}
+	// ----------------------------------------------------------------
+	// THROTTLE UTILITY
+	// ----------------------------------------------------------------
+	function throttle(fn, delay) {
+		let lastCall = 0;
+		return function (...args) {
+			const now = Date.now();
+			if (now - lastCall >= delay) {
+				lastCall = now;
+				fn.apply(this, args);
+			}
+		};
+	}
 
-// ----------------------------------------------------------------
-// STREAM A — KEYBOARD
-// ----------------------------------------------------------------
-const kb = {
-  keydown_count: 0,
-  backspace_count: 0,
-  pause_count: 0,
-  pause_detected: false,
-  last_key_time: null,
-  inter_key_delays: [],
-  recent_keydowns: [], // timestamps for rolling WPM
-};
+	// ----------------------------------------------------------------
+	// STREAM A — KEYBOARD
+	// ----------------------------------------------------------------
+	const kb = {
+		keydown_count: 0,
+		backspace_count: 0,
+		pause_count: 0,
+		pause_detected: false,
+		last_key_time: null,
+		inter_key_delays: [],
+		recent_keydowns: [], // timestamps for rolling WPM
+	};
 
-document.addEventListener('keydown', (e) => {
-  const now = Date.now();
+	document.addEventListener(
+		"keydown",
+		(e) => {
+			const now = Date.now();
 
-  if (e.key === 'Backspace') kb.backspace_count++;
+			if (e.key === "Backspace") kb.backspace_count++;
 
-  if (kb.last_key_time !== null) {
-    const delay = now - kb.last_key_time;
-    if (delay > 2000) {
-      kb.pause_detected = true;
-      kb.pause_count++;
-    }
-    kb.inter_key_delays.push(delay);
-  }
+			if (kb.last_key_time !== null) {
+				const delay = now - kb.last_key_time;
+				if (delay > 2000) {
+					kb.pause_detected = true;
+					kb.pause_count++;
+				}
+				kb.inter_key_delays.push(delay);
+			}
 
-  kb.keydown_count++;
-  kb.recent_keydowns.push(now);
-  kb.last_key_time = now;
-}, { passive: true });
+			kb.keydown_count++;
+			kb.recent_keydowns.push(now);
+			kb.last_key_time = now;
+		},
+		{ passive: true },
+	);
 
-safeInterval(() => {
-  const now = Date.now();
+	safeInterval(() => {
+		const now = Date.now();
 
-  // Rolling 60s keydowns for WPM
-  kb.recent_keydowns = kb.recent_keydowns.filter(t => now - t >= now - 60000);
-  // WPM ≈ keydowns in 60s / 5  (avg word ≈ 5 chars)
-  const wpm_estimate = Math.round(kb.recent_keydowns.length / 5);
+		// Rolling 60s keydowns for WPM
+		kb.recent_keydowns = kb.recent_keydowns.filter(
+			(t) => now - t >= now - 60000,
+		);
+		// WPM ≈ keydowns in 60s / 5  (avg word ≈ 5 chars)
+		const wpm_estimate = Math.round(kb.recent_keydowns.length / 5);
 
-  const error_rate = kb.keydown_count > 0
-    ? parseFloat((kb.backspace_count / kb.keydown_count).toFixed(3))
-    : 0;
+		const error_rate =
+			kb.keydown_count > 0
+				? parseFloat((kb.backspace_count / kb.keydown_count).toFixed(3))
+				: 0;
 
-  const inter_key_delay_ms_avg = kb.inter_key_delays.length > 0
-    ? Math.round(kb.inter_key_delays.reduce((a, b) => a + b, 0) / kb.inter_key_delays.length)
-    : 0;
+		const inter_key_delay_ms_avg =
+			kb.inter_key_delays.length > 0
+				? Math.round(
+						kb.inter_key_delays.reduce((a, b) => a + b, 0) /
+							kb.inter_key_delays.length,
+					)
+				: 0;
 
-  const burst_typing = wpm_estimate > 60;
+		const burst_typing = wpm_estimate > 60;
 
-  safeSendMessage({
-    type: 'KEYBOARD_BATCH',
-    data: {
-      wpm_estimate,
-      inter_key_delay_ms_avg,
-      error_rate,
-      pause_detected: kb.pause_detected,
-      pause_count: kb.pause_count,
-      burst_typing,
-      keydown_count: kb.keydown_count
-    }
-  });
+		safeSendMessage({
+			type: "KEYBOARD_BATCH",
+			data: {
+				wpm_estimate,
+				inter_key_delay_ms_avg,
+				error_rate,
+				pause_detected: kb.pause_detected,
+				pause_count: kb.pause_count,
+				burst_typing,
+				keydown_count: kb.keydown_count,
+			},
+		});
 
-  // Reset per-window counters (keep recent_keydowns for rolling WPM)
-  kb.backspace_count = 0;
-  kb.pause_detected = false;
-  kb.pause_count = 0;
-  kb.inter_key_delays = [];
-}, 5000);
+		// Reset per-window counters (keep recent_keydowns for rolling WPM)
+		kb.backspace_count = 0;
+		kb.pause_detected = false;
+		kb.pause_count = 0;
+		kb.inter_key_delays = [];
+	}, 5000);
 
-// ----------------------------------------------------------------
-// STREAM B — MOUSE
-// ----------------------------------------------------------------
-const mouse = {
-  last_x: null,
-  last_y: null,
-  last_move_time: null,
-  last_mousemove_time: Date.now(),
-  speed_samples: [],
-  click_count: 0,
-  click_timestamps: [],
-};
+	// ----------------------------------------------------------------
+	// STREAM B — MOUSE
+	// ----------------------------------------------------------------
+	const mouse = {
+		last_x: null,
+		last_y: null,
+		last_move_time: null,
+		last_mousemove_time: Date.now(),
+		speed_samples: [],
+		click_count: 0,
+		click_timestamps: [],
+	};
 
-document.addEventListener('mousemove', throttle((e) => {
-  const now = Date.now();
-  mouse.last_mousemove_time = now;
+	document.addEventListener(
+		"mousemove",
+		throttle((e) => {
+			const now = Date.now();
+			mouse.last_mousemove_time = now;
 
-  if (mouse.last_x !== null && mouse.last_move_time !== null) {
-    const dx = e.clientX - mouse.last_x;
-    const dy = e.clientY - mouse.last_y;
-    const distance = Math.sqrt(dx * dx + dy * dy);
-    const dt = (now - mouse.last_move_time) / 1000;
-    if (dt > 0) mouse.speed_samples.push(distance / dt);
-  }
+			if (mouse.last_x !== null && mouse.last_move_time !== null) {
+				const dx = e.clientX - mouse.last_x;
+				const dy = e.clientY - mouse.last_y;
+				const distance = Math.sqrt(dx * dx + dy * dy);
+				const dt = (now - mouse.last_move_time) / 1000;
+				if (dt > 0) mouse.speed_samples.push(distance / dt);
+			}
 
-  mouse.last_x = e.clientX;
-  mouse.last_y = e.clientY;
-  mouse.last_move_time = now;
-}, 50), { passive: true });
+			mouse.last_x = e.clientX;
+			mouse.last_y = e.clientY;
+			mouse.last_move_time = now;
+		}, 50),
+		{ passive: true },
+	);
 
-document.addEventListener('click', () => {
-  const now = Date.now();
-  mouse.click_count++;
-  mouse.click_timestamps.push(now);
-}, { passive: true });
+	document.addEventListener(
+		"click",
+		() => {
+			const now = Date.now();
+			mouse.click_count++;
+			mouse.click_timestamps.push(now);
+		},
+		{ passive: true },
+	);
 
-safeInterval(() => {
-  const now = Date.now();
-  const samples = mouse.speed_samples;
+	safeInterval(() => {
+		const now = Date.now();
+		const samples = mouse.speed_samples;
 
-  const speed_avg = samples.length > 0
-    ? Math.round(samples.reduce((a, b) => a + b, 0) / samples.length)
-    : 0;
+		const speed_avg =
+			samples.length > 0
+				? Math.round(samples.reduce((a, b) => a + b, 0) / samples.length)
+				: 0;
 
-  let acceleration_variance = 0;
-  if (samples.length > 1) {
-    const variance = samples.reduce((acc, s) => acc + (s - speed_avg) ** 2, 0) / samples.length;
-    acceleration_variance = Math.round(variance);
-  }
+		let acceleration_variance = 0;
+		if (samples.length > 1) {
+			const variance =
+				samples.reduce((acc, s) => acc + (s - speed_avg) ** 2, 0) /
+				samples.length;
+			acceleration_variance = Math.round(variance);
+		}
 
-  const cursor_idle_ms = now - mouse.last_mousemove_time;
-  const click_rate_per_min = mouse.click_count * 12; // extrapolate 5s → 60s
+		const cursor_idle_ms = now - mouse.last_mousemove_time;
+		const click_rate_per_min = mouse.click_count * 12; // extrapolate 5s → 60s
 
-  const clickIntervals = [];
-  for (let i = 1; i < mouse.click_timestamps.length; i++) {
-    clickIntervals.push(mouse.click_timestamps[i] - mouse.click_timestamps[i - 1]);
-  }
-  const click_interval_ms_avg = clickIntervals.length > 0
-    ? Math.round(clickIntervals.reduce((a, b) => a + b, 0) / clickIntervals.length)
-    : 0;
+		const clickIntervals = [];
+		for (let i = 1; i < mouse.click_timestamps.length; i++) {
+			clickIntervals.push(
+				mouse.click_timestamps[i] - mouse.click_timestamps[i - 1],
+			);
+		}
+		const click_interval_ms_avg =
+			clickIntervals.length > 0
+				? Math.round(
+						clickIntervals.reduce((a, b) => a + b, 0) / clickIntervals.length,
+					)
+				: 0;
 
-  safeSendMessage({
-    type: 'MOUSE_BATCH',
-    data: { speed_avg, acceleration_variance, cursor_idle_ms, click_rate_per_min, click_interval_ms_avg }
-  });
+		safeSendMessage({
+			type: "MOUSE_BATCH",
+			data: {
+				speed_avg,
+				acceleration_variance,
+				cursor_idle_ms,
+				click_rate_per_min,
+				click_interval_ms_avg,
+			},
+		});
 
-  // Reset
-  mouse.speed_samples = [];
-  mouse.click_count = 0;
-  mouse.click_timestamps = [];
-}, 5000);
+		// Reset
+		mouse.speed_samples = [];
+		mouse.click_count = 0;
+		mouse.click_timestamps = [];
+	}, 5000);
 
-// ----------------------------------------------------------------
-// STREAM C — SCROLL
-// ----------------------------------------------------------------
-const scrl = {
-  last_scrollY: window.scrollY,
-  last_scroll_time: Date.now(),
-  last_direction: 0,
-  direction_changes: 0,
-  velocity_samples: [],
-};
+	// ----------------------------------------------------------------
+	// STREAM C — SCROLL
+	// ----------------------------------------------------------------
+	const scrl = {
+		last_scrollY: window.scrollY,
+		last_scroll_time: Date.now(),
+		last_direction: 0,
+		direction_changes: 0,
+		velocity_samples: [],
+	};
 
-document.addEventListener('scroll', throttle(() => {
-  const now = Date.now();
-  const currentScrollY = window.scrollY;
-  const dt = (now - scrl.last_scroll_time) / 1000;
-  const delta = currentScrollY - scrl.last_scrollY;
+	document.addEventListener(
+		"scroll",
+		throttle(() => {
+			const now = Date.now();
+			const currentScrollY = window.scrollY;
+			const dt = (now - scrl.last_scroll_time) / 1000;
+			const delta = currentScrollY - scrl.last_scrollY;
 
-  if (dt > 0 && delta !== 0) {
-    scrl.velocity_samples.push(Math.abs(delta) / dt);
-    const direction = delta > 0 ? 1 : -1;
-    if (scrl.last_direction !== 0 && direction !== scrl.last_direction) {
-      scrl.direction_changes++;
-    }
-    scrl.last_direction = direction;
-  }
+			if (dt > 0 && delta !== 0) {
+				scrl.velocity_samples.push(Math.abs(delta) / dt);
+				const direction = delta > 0 ? 1 : -1;
+				if (scrl.last_direction !== 0 && direction !== scrl.last_direction) {
+					scrl.direction_changes++;
+				}
+				scrl.last_direction = direction;
+			}
 
-  scrl.last_scrollY = currentScrollY;
-  scrl.last_scroll_time = now;
-}, 100), { passive: true });
+			scrl.last_scrollY = currentScrollY;
+			scrl.last_scroll_time = now;
+		}, 100),
+		{ passive: true },
+	);
 
-safeInterval(() => {
-  const bodyHeight = document.body.scrollHeight;
-  const depth_pct = bodyHeight > 0
-    ? Math.round((window.scrollY / bodyHeight) * 100)
-    : 0;
+	safeInterval(() => {
+		const bodyHeight = document.body.scrollHeight;
+		const depth_pct =
+			bodyHeight > 0 ? Math.round((window.scrollY / bodyHeight) * 100) : 0;
 
-  const velocity_avg = scrl.velocity_samples.length > 0
-    ? Math.round(scrl.velocity_samples.reduce((a, b) => a + b, 0) / scrl.velocity_samples.length)
-    : 0;
+		const velocity_avg =
+			scrl.velocity_samples.length > 0
+				? Math.round(
+						scrl.velocity_samples.reduce((a, b) => a + b, 0) /
+							scrl.velocity_samples.length,
+					)
+				: 0;
 
-  safeSendMessage({
-    type: 'SCROLL_BATCH',
-    data: { depth_pct, velocity_avg, direction_changes: scrl.direction_changes }
-  });
+		safeSendMessage({
+			type: "SCROLL_BATCH",
+			data: {
+				depth_pct,
+				velocity_avg,
+				direction_changes: scrl.direction_changes,
+			},
+		});
 
-  scrl.velocity_samples = [];
-  scrl.direction_changes = 0;
-}, 5000);
+		scrl.velocity_samples = [];
+		scrl.direction_changes = 0;
+	}, 5000);
 
-// ----------------------------------------------------------------
-// STREAM D — PAGE CONTENT
-// ----------------------------------------------------------------
-const pg = {
-  form_active: false,
-  video_playing: false,
-  video_watch_duration_s: 0,
-  last_video_check: Date.now(),
-  // Engagement counters (reset every 5s)
-  keydown_count: 0,
-  click_count: 0,
-  scroll_event_count: 0,
-};
+	// ----------------------------------------------------------------
+	// STREAM D — PAGE CONTENT
+	// ----------------------------------------------------------------
+	const pg = {
+		form_active: false,
+		video_playing: false,
+		video_watch_duration_s: 0,
+		last_video_check: Date.now(),
+		// Engagement counters (reset every 5s)
+		keydown_count: 0,
+		click_count: 0,
+		scroll_event_count: 0,
+	};
 
-// Form focus tracking
-function attachFormListeners() {
-  document.querySelectorAll('input, textarea').forEach(el => {
-    if (el.__cogniSenseAttached) return;
-    el.__cogniSenseAttached = true;
-    el.addEventListener('focus', () => { pg.form_active = true; }, { passive: true });
-    el.addEventListener('blur', () => { pg.form_active = false; }, { passive: true });
-  });
-}
-attachFormListeners();
+	// Form focus tracking
+	function attachFormListeners() {
+		document.querySelectorAll("input, textarea").forEach((el) => {
+			if (el.__cogniSenseAttached) return;
+			el.__cogniSenseAttached = true;
+			el.addEventListener(
+				"focus",
+				() => {
+					pg.form_active = true;
+				},
+				{ passive: true },
+			);
+			el.addEventListener(
+				"blur",
+				() => {
+					pg.form_active = false;
+				},
+				{ passive: true },
+			);
+		});
+	}
+	attachFormListeners();
 
-// Re-attach when DOM changes (SPAs with dynamic forms)
-const formObserver = new MutationObserver(throttle(attachFormListeners, 1000));
-if (document.body) {
-  formObserver.observe(document.body, { childList: true, subtree: true });
-}
+	// Re-attach when DOM changes (SPAs with dynamic forms)
+	const formObserver = new MutationObserver(
+		throttle(attachFormListeners, 1000),
+	);
+	if (document.body) {
+		formObserver.observe(document.body, { childList: true, subtree: true });
+	}
 
-// Engagement event counters
-document.addEventListener('keydown', () => { pg.keydown_count++; }, { passive: true });
-document.addEventListener('click', () => { pg.click_count++; }, { passive: true });
-document.addEventListener('scroll', () => { pg.scroll_event_count++; }, { passive: true });
+	// Engagement event counters
+	document.addEventListener(
+		"keydown",
+		() => {
+			pg.keydown_count++;
+		},
+		{ passive: true },
+	);
+	document.addEventListener(
+		"click",
+		() => {
+			pg.click_count++;
+		},
+		{ passive: true },
+	);
+	document.addEventListener(
+		"scroll",
+		() => {
+			pg.scroll_event_count++;
+		},
+		{ passive: true },
+	);
 
-// Page visibility
-document.addEventListener('visibilitychange', () => {
-  safeSendMessage({ type: document.hidden ? 'PAGE_HIDDEN' : 'PAGE_VISIBLE' });
-});
+	// Page visibility
+	document.addEventListener("visibilitychange", () => {
+		safeSendMessage({ type: document.hidden ? "PAGE_HIDDEN" : "PAGE_VISIBLE" });
+	});
 
-function checkVideos() {
-  const now = Date.now();
-  const videos = document.querySelectorAll('video');
-  let anyPlaying = false;
-  videos.forEach(v => { if (!v.paused) anyPlaying = true; });
+	function checkVideos() {
+		const now = Date.now();
+		const videos = document.querySelectorAll("video");
+		let anyPlaying = false;
+		videos.forEach((v) => {
+			if (!v.paused) anyPlaying = true;
+		});
 
-  const dt = (now - pg.last_video_check) / 1000;
-  if (pg.video_playing && anyPlaying) pg.video_watch_duration_s += dt;
+		const dt = (now - pg.last_video_check) / 1000;
+		if (pg.video_playing && anyPlaying) pg.video_watch_duration_s += dt;
 
-  pg.video_playing = anyPlaying;
-  pg.last_video_check = now;
-}
+		pg.video_playing = anyPlaying;
+		pg.last_video_check = now;
+	}
 
-safeInterval(() => {
-  checkVideos();
+	safeInterval(() => {
+		checkVideos();
 
-  const engagement_score =
-    (pg.keydown_count * 2) + (pg.click_count * 3) + (pg.scroll_event_count * 1);
+		const engagement_score =
+			pg.keydown_count * 2 + pg.click_count * 3 + pg.scroll_event_count * 1;
 
-  safeSendMessage({
-    type: 'PAGE_BATCH',
-    data: {
-      form_active: pg.form_active,
-      video_playing: pg.video_playing,
-      video_watch_duration_s: Math.round(pg.video_watch_duration_s),
-      engagement_score
-    }
-  });
+		safeSendMessage({
+			type: "PAGE_BATCH",
+			data: {
+				form_active: pg.form_active,
+				video_playing: pg.video_playing,
+				video_watch_duration_s: Math.round(pg.video_watch_duration_s),
+				engagement_score,
+			},
+		});
 
-  // Reset engagement counters
-  pg.keydown_count = 0;
-  pg.click_count = 0;
-  pg.scroll_event_count = 0;
-}, 5000);
+		// Reset engagement counters
+		pg.keydown_count = 0;
+		pg.click_count = 0;
+		pg.scroll_event_count = 0;
+	}, 5000);
 
-// ----------------------------------------------------------------
-// FLOATING HUD — SHADOW DOM INJECTION
-// ----------------------------------------------------------------
-function injectFloatingHUD() {
-  // Skip extension pages and about: pages
-  const proto = window.location.protocol;
-  if (proto === 'chrome-extension:' || proto === 'chrome:' || proto === 'about:') return;
-  if (document.getElementById('__cogni-sense-hud-root__')) return;
+	// ----------------------------------------------------------------
+	// FLOATING HUD — SHADOW DOM INJECTION
+	// ----------------------------------------------------------------
+	function injectFloatingHUD() {
+		// Skip extension pages and about: pages
+		const proto = window.location.protocol;
+		if (
+			proto === "chrome-extension:" ||
+			proto === "chrome:" ||
+			proto === "about:"
+		)
+			return;
+		if (document.getElementById("__cogni-sense-hud-root__")) return;
 
-  const hostEl = document.createElement('div');
-  hostEl.id = '__cogni-sense-hud-root__';
-  // Must be in body for fixed positioning to work
-  document.body.appendChild(hostEl);
+		const hostEl = document.createElement("div");
+		hostEl.id = "__cogni-sense-hud-root__";
+		// Must be in body for fixed positioning to work
+		document.body.appendChild(hostEl);
 
-  const shadow = hostEl.attachShadow({ mode: 'open' });
+		const shadow = hostEl.attachShadow({ mode: "open" });
 
-  // ----- CSS -----
-  const style = document.createElement('style');
-  style.textContent = `
+		// ----- CSS -----
+		const style = document.createElement("style");
+		style.textContent = `
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap');
 
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -413,7 +506,7 @@ function injectFloatingHUD() {
       color: #dde0f0;
       opacity: 0.65;
       transition: opacity 0.25s ease, transform 0.3s cubic-bezier(.4,0,.2,1), min-width 0.3s ease, border-radius 0.3s ease;
-      cursor: default;
+			cursor: pointer;
     }
 
     #cogni-card:hover { opacity: 1; }
@@ -592,11 +685,11 @@ function injectFloatingHUD() {
     .cogni-footer { margin-top: 10px; display: flex; gap: 5px; }
     .cogni-footer .cogni-btn { width: auto; flex: 1; }
   `;
-  shadow.appendChild(style);
+		shadow.appendChild(style);
 
-  // ----- HTML -----
-  const wrap = document.createElement('div');
-  wrap.innerHTML = `
+		// ----- HTML -----
+		const wrap = document.createElement("div");
+		wrap.innerHTML = `
     <div id="cogni-hud">
       <div id="cogni-card">
         <!-- Collapsed pill view -->
@@ -644,145 +737,161 @@ function injectFloatingHUD() {
       </div>
     </div>
   `;
-  shadow.appendChild(wrap);
+		shadow.appendChild(wrap);
 
-  // ----- BEHAVIOUR -----
-  const card = shadow.getElementById('cogni-card');
-  const collapseBtn = shadow.getElementById('cogni-collapse-btn');
-  let collapsed = false;
+		// ----- BEHAVIOUR -----
+		const card = shadow.getElementById("cogni-card");
+		const collapseBtn = shadow.getElementById("cogni-collapse-btn");
+		let collapsed = false;
 
-  collapseBtn.addEventListener('click', (e) => {
-    e.stopPropagation();
-    collapsed = true;
-    card.classList.add('collapsed');
-  });
+		collapseBtn.addEventListener("click", (e) => {
+			e.stopPropagation();
+			collapsed = true;
+			card.classList.add("collapsed");
+		});
 
-  card.addEventListener('click', () => {
-    if (collapsed) {
-      collapsed = false;
-      card.classList.remove('collapsed');
-    }
-  });
+		card.addEventListener("click", () => {
+			if (collapsed) {
+				collapsed = false;
+				card.classList.remove("collapsed");
+				return;
+			}
 
-  shadow.getElementById('cogni-pause-btn').addEventListener('click', (e) => {
-    e.stopPropagation();
-    safeSendMessage({ type: 'TOGGLE_PAUSE' }, (resp) => {
-      if (resp) {
-        const btn = shadow.getElementById('cogni-pause-btn');
-        if (resp.paused) {
-          btn.textContent = '▶ Resume';
-          btn.classList.add('pause-active');
-        } else {
-          btn.textContent = '⏸ Pause';
-          btn.classList.remove('pause-active');
-        }
-      }
-    });
-  });
+			// Clicking the expanded HUD opens the extension side panel.
+			safeSendMessage({ type: "OPEN_SIDEPANEL", view: "active" });
+		});
 
-  shadow.getElementById('cogni-stop-btn').addEventListener('click', (e) => {
-    e.stopPropagation();
-    // Background will broadcast FORCE_TEARDOWN to ALL tabs, removing every HUD
-    safeSendMessage({ type: 'DISABLE_MONITORING' });
-    // Optimistically teardown this tab immediately (won't wait for broadcast)
-    setTimeout(teardown, 100);
-  });
+		shadow.getElementById("cogni-pause-btn").addEventListener("click", (e) => {
+			e.stopPropagation();
+			safeSendMessage({ type: "TOGGLE_PAUSE" }, (resp) => {
+				if (resp) {
+					const btn = shadow.getElementById("cogni-pause-btn");
+					if (resp.paused) {
+						btn.textContent = "▶ Resume";
+						btn.classList.add("pause-active");
+					} else {
+						btn.textContent = "⏸ Pause";
+						btn.classList.remove("pause-active");
+					}
+				}
+			});
+		});
 
-  shadow.getElementById('cogni-settings-btn').addEventListener('click', () => {
-    safeSendMessage({ type: 'OPEN_SIDEPANEL' });
-  });
+		shadow.getElementById("cogni-stop-btn").addEventListener("click", (e) => {
+			e.stopPropagation();
+			// Background will broadcast FORCE_TEARDOWN to ALL tabs, removing every HUD
+			safeSendMessage({ type: "DISABLE_MONITORING" });
+			// Optimistically teardown this tab immediately (won't wait for broadcast)
+			setTimeout(teardown, 100);
+		});
 
-  // Listen for broadcast from background
-  if (_contextAlive && chrome.runtime?.id) {
-    chrome.runtime.onMessage.addListener((msg) => {
-      if (msg.type === 'HUD_UPDATE') applyHudUpdate(shadow, msg);
-    });
-  }
+		shadow
+			.getElementById("cogni-settings-btn")
+			.addEventListener("click", (e) => {
+				e.stopPropagation();
+				safeSendMessage({ type: "OPEN_SIDEPANEL", view: "config" });
+			});
 
-  // Initial status fetch
-  safeSendMessage({ type: 'GET_STATUS' }, (resp) => {
-    if (resp && resp.initialized) applyHudUpdate(shadow, resp);
-  });
+		// Listen for broadcast from background
+		if (_contextAlive && chrome.runtime?.id) {
+			chrome.runtime.onMessage.addListener((msg) => {
+				if (msg.type === "HUD_UPDATE") applyHudUpdate(shadow, msg);
+			});
+		}
 
-  // Periodic refresh every 5s
-  safeInterval(() => {
-    safeSendMessage({ type: 'GET_STATUS' }, (resp) => {
-      if (resp && resp.initialized) applyHudUpdate(shadow, resp);
-    });
-  }, 5000);
-}
+		// Initial status fetch
+		safeSendMessage({ type: "GET_STATUS" }, (resp) => {
+			if (resp && resp.initialized) applyHudUpdate(shadow, resp);
+		});
 
-function applyHudUpdate(shadow, data) {
-  const dotEl       = shadow.getElementById('cogni-dot');
-  const collDotEl   = shadow.getElementById('cogni-collapsed-dot');
-  const statusText  = shadow.getElementById('cogni-status-text');
-  const offlineMsg  = shadow.getElementById('cogni-offline-msg');
-  const sessionEl   = shadow.getElementById('cogni-session');
-  const syncEl      = shadow.getElementById('cogni-sync');
-  const badgeEl     = shadow.getElementById('cogni-badge');
-  const pauseBtn    = shadow.getElementById('cogni-pause-btn');
+		// Periodic refresh every 5s
+		safeInterval(() => {
+			safeSendMessage({ type: "GET_STATUS" }, (resp) => {
+				if (resp && resp.initialized) applyHudUpdate(shadow, resp);
+			});
+		}, 5000);
+	}
 
-  if (!dotEl) return;
+	function applyHudUpdate(shadow, data) {
+		const dotEl = shadow.getElementById("cogni-dot");
+		const collDotEl = shadow.getElementById("cogni-collapsed-dot");
+		const statusText = shadow.getElementById("cogni-status-text");
+		const offlineMsg = shadow.getElementById("cogni-offline-msg");
+		const sessionEl = shadow.getElementById("cogni-session");
+		const syncEl = shadow.getElementById("cogni-sync");
+		const badgeEl = shadow.getElementById("cogni-badge");
+		const pauseBtn = shadow.getElementById("cogni-pause-btn");
 
-  // Paused overrides all connection statuses
-  if (data.paused) {
-    dotEl.className = 'cogni-dot paused';
-    collDotEl.className = 'cogni-collapsed-dot paused';
-    statusText.textContent = 'Paused';
-    offlineMsg.style.display = 'none';
-    if (pauseBtn) { pauseBtn.textContent = '▶ Resume'; pauseBtn.classList.add('pause-active'); }
-  } else {
-    const statusClass = data.status || 'active';
-    dotEl.className = `cogni-dot ${statusClass}`;
-    collDotEl.className = `cogni-collapsed-dot ${statusClass}`;
-    if (pauseBtn) { pauseBtn.textContent = '⏸ Pause'; pauseBtn.classList.remove('pause-active'); }
+		if (!dotEl) return;
 
-    if (data.status === 'offline') {
-      statusText.textContent = 'Offline';
-      const n = data.pending_count || 0;
-      offlineMsg.textContent = `${n} snapshot${n !== 1 ? 's' : ''} buffered`;
-      offlineMsg.style.display = 'block';
-    } else if (data.status === 'idle') {
-      statusText.textContent = 'Idle Detected';
-      offlineMsg.style.display = 'none';
-    } else {
-      statusText.textContent = 'Monitoring Active';
-      offlineMsg.style.display = 'none';
-    }
-  }
+		// Paused overrides all connection statuses
+		if (data.paused) {
+			dotEl.className = "cogni-dot paused";
+			collDotEl.className = "cogni-collapsed-dot paused";
+			statusText.textContent = "Paused";
+			offlineMsg.style.display = "none";
+			if (pauseBtn) {
+				pauseBtn.textContent = "▶ Resume";
+				pauseBtn.classList.add("pause-active");
+			}
+		} else {
+			const statusClass = data.status || "active";
+			dotEl.className = `cogni-dot ${statusClass}`;
+			collDotEl.className = `cogni-collapsed-dot ${statusClass}`;
+			if (pauseBtn) {
+				pauseBtn.textContent = "⏸ Pause";
+				pauseBtn.classList.remove("pause-active");
+			}
 
-  if (data.session_start) {
-    sessionEl.textContent = formatDuration(Date.now() - data.session_start);
-  }
+			if (data.status === "offline") {
+				statusText.textContent = "Offline";
+				const n = data.pending_count || 0;
+				offlineMsg.textContent = `${n} snapshot${n !== 1 ? "s" : ""} buffered`;
+				offlineMsg.style.display = "block";
+			} else if (data.status === "idle") {
+				statusText.textContent = "Idle Detected";
+				offlineMsg.style.display = "none";
+			} else {
+				statusText.textContent = "Monitoring Active";
+				offlineMsg.style.display = "none";
+			}
+		}
 
-  syncEl.textContent = data.paused ? 'Paused' : formatLastSync(data.last_sync);
+		if (data.session_start) {
+			sessionEl.textContent = formatDuration(Date.now() - data.session_start);
+		}
 
-  if (data.cognitive_state && !data.paused) {
-    badgeEl.textContent = `🧠 ${data.cognitive_state}`;
-    badgeEl.style.display = 'block';
-  } else {
-    badgeEl.style.display = 'none';
-  }
-}
+		syncEl.textContent = data.paused
+			? "Paused"
+			: formatLastSync(data.last_sync);
 
-function formatDuration(ms) {
-  const s = Math.floor(ms / 1000);
-  const h = Math.floor(s / 3600);
-  const m = Math.floor((s % 3600) / 60);
-  return h > 0 ? `${h}h ${m}m` : `${m}m`;
-}
+		if (data.cognitive_state && !data.paused) {
+			badgeEl.textContent = `🧠 ${data.cognitive_state}`;
+			badgeEl.style.display = "block";
+		} else {
+			badgeEl.style.display = "none";
+		}
+	}
 
-function formatLastSync(ts) {
-  if (!ts) return '—';
-  const ago = Math.floor((Date.now() - ts) / 1000);
-  if (ago < 10) return 'just now';
-  if (ago < 60) return `${ago}s ago`;
-  return `${Math.floor(ago / 60)}m ago`;
-}
+	function formatDuration(ms) {
+		const s = Math.floor(ms / 1000);
+		const h = Math.floor(s / 3600);
+		const m = Math.floor((s % 3600) / 60);
+		return h > 0 ? `${h}h ${m}m` : `${m}m`;
+	}
 
-// Inject HUD when DOM is ready
-if (document.body) {
-  injectFloatingHUD();
-} else {
-  document.addEventListener('DOMContentLoaded', injectFloatingHUD);
-}
+	function formatLastSync(ts) {
+		if (!ts) return "—";
+		const ago = Math.floor((Date.now() - ts) / 1000);
+		if (ago < 10) return "just now";
+		if (ago < 60) return `${ago}s ago`;
+		return `${Math.floor(ago / 60)}m ago`;
+	}
+
+	// Inject HUD when DOM is ready
+	if (document.body) {
+		injectFloatingHUD();
+	} else {
+		document.addEventListener("DOMContentLoaded", injectFloatingHUD);
+	}
+})();
