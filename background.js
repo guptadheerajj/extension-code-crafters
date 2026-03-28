@@ -70,6 +70,7 @@ function initState(sessionId) {
 		last_sync: null,
 		last_feedback: null,
 		focus_streak_start: Date.now(),
+		idle_started_at: null,
 		break_count: 0,
 		hud_status: "active", // 'active' | 'offline' | 'idle'
 		paused: false,
@@ -254,11 +255,27 @@ chrome.idle.onStateChanged.addListener((newState) => {
 	if (newState === "idle" || newState === "locked") {
 		state.break_count++;
 		state.hud_status = "idle";
+		if (!state.idle_started_at) {
+			state.idle_started_at = Date.now();
+		}
 	} else if (newState === "active") {
 		state.focus_streak_start = Date.now();
+		state.idle_started_at = null;
 		if (state.hud_status === "idle") state.hud_status = "active";
 	}
 	broadcastHudUpdate();
+});
+
+chrome.tabs.onCreated.addListener(async () => {
+	if (!state) return;
+	const allTabs = await chrome.tabs.query({ currentWindow: true });
+	state.tab.tab_count = allTabs.length;
+});
+
+chrome.tabs.onRemoved.addListener(async () => {
+	if (!state) return;
+	const allTabs = await chrome.tabs.query({ currentWindow: true });
+	state.tab.tab_count = allTabs.length;
 });
 
 // ----------------------------------------------------------------
@@ -550,11 +567,16 @@ async function broadcastHudUpdate() {
 }
 
 function buildStatusPayload() {
+	const idleTimeMs = state.idle_started_at
+		? Date.now() - state.idle_started_at
+		: 0;
 	return {
 		type: "HUD_UPDATE",
 		status: state.hud_status,
 		paused: state.paused,
 		pending_count: state.pending_snapshots.length,
+		tab_count: state.tab.tab_count,
+		idle_time_ms: idleTimeMs,
 		last_sync: state.last_sync,
 		session_start: state.session_start,
 		session_id: state.session_id,

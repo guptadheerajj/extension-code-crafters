@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -9,6 +10,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="sidepanel.css">
 </head>
+
 <body>
 
   <!-- ═══════════════════════════════════════════
@@ -74,7 +76,7 @@
       <div class="config-topbar">
         <button class="back-btn" id="btn-config-back" aria-label="Go back">
           <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-            <path d="M10 3L5 8L10 13" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M10 3L5 8L10 13" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
           </svg>
         </button>
         <h2 class="config-title">Configuration</h2>
@@ -82,15 +84,7 @@
 
       <div class="field-group">
         <label class="field-label" for="api-url-input">Backend API Endpoint</label>
-        <input
-          type="url"
-          id="api-url-input"
-          class="field-input"
-          placeholder="http://127.0.0.1:8000/api/v1"
-          value="http://127.0.0.1:8000/api/v1"
-          autocomplete="off"
-          spellcheck="false"
-        >
+        <input type="url" id="api-url-input" class="field-input" placeholder="http://127.0.0.1:8000/api/v1" value="http://127.0.0.1:8000/api/v1" autocomplete="off" spellcheck="false">
         <div class="field-hint">Use API base URL (e.g. /api/v1) or docs URL (/docs)</div>
         <div class="field-error" id="api-url-error"></div>
       </div>
@@ -191,12 +185,12 @@
           <div class="stat-value" id="stat-sync">—</div>
         </div>
         <div class="stat-card">
-          <div class="stat-label">Buffered</div>
-          <div class="stat-value" id="stat-buffered">0</div>
+          <div class="stat-label">Tabs Open</div>
+          <div class="stat-value" id="stat-tabs">0</div>
         </div>
         <div class="stat-card">
-          <div class="stat-label">State</div>
-          <div class="stat-value" id="stat-state">—</div>
+          <div class="stat-label">Idle Time</div>
+          <div class="stat-value" id="stat-idle">0m 0s</div>
         </div>
       </div>
 
@@ -224,4 +218,5 @@
 
   <script src="sidepanel.js"></script>
 </body>
+
 </html>

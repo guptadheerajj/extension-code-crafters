@@ -17,10 +17,10 @@ function showScreen(el) {
 
 // ── Utility ─────────────────────────────────────────────────
 function formatDuration(ms) {
-	const s = Math.floor(ms / 1000);
-	const h = Math.floor(s / 3600);
-	const m = Math.floor((s % 3600) / 60);
-	return h > 0 ? `${h}h ${m}m` : `${m}m`;
+	const totalSeconds = Math.max(0, Math.floor(ms / 1000));
+	const m = Math.floor(totalSeconds / 60);
+	const s = totalSeconds % 60;
+	return `${m}m ${s}s`;
 }
 function formatLastSync(ts) {
 	if (!ts) return "—";
@@ -129,8 +129,8 @@ function updateActiveScreen() {
 
 		const sessionEl = document.getElementById("stat-session");
 		const syncEl = document.getElementById("stat-sync");
-		const bufferedEl = document.getElementById("stat-buffered");
-		const stateEl = document.getElementById("stat-state");
+		const tabsEl = document.getElementById("stat-tabs");
+		const idleEl = document.getElementById("stat-idle");
 		const syncDotEl = document.getElementById("sync-dot");
 		const syncLabel = document.getElementById("sync-label");
 		const pauseBtn = document.getElementById("btn-pause");
@@ -141,13 +141,8 @@ function updateActiveScreen() {
 		syncEl.textContent = resp.paused
 			? "Paused"
 			: formatLastSync(resp.last_sync);
-		bufferedEl.textContent = resp.pending_count ?? 0;
-		stateEl.textContent = resp.paused
-			? "Paused"
-			: resp.cognitive_state
-				? resp.cognitive_state.charAt(0).toUpperCase() +
-					resp.cognitive_state.slice(1)
-				: "—";
+		tabsEl.textContent = resp.tab_count ?? 0;
+		idleEl.textContent = formatDuration(resp.idle_time_ms ?? 0);
 
 		if (pauseBtn) {
 			if (resp.paused) {
