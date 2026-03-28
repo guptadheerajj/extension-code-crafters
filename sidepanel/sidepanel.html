@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CogniSense Setup</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="sidepanel.css">
+</head>
+<body>
+
+  <!-- ═══════════════════════════════════════════
+       SCREEN 1 — WELCOME
+  ═══════════════════════════════════════════ -->
+  <div id="screen-welcome" class="screen active" role="main">
+    <div class="screen-inner">
+
+      <div class="hero">
+        <div class="hero-glow"></div>
+        <div class="hero-logo">🧠</div>
+        <h1 class="hero-title">CogniSense</h1>
+        <p class="hero-subtitle">Intelligent cognitive state monitoring — entirely on your machine.</p>
+      </div>
+
+      <div class="section-label">What we collect</div>
+      <div class="data-cards">
+        <div class="data-card">
+          <span class="data-card-icon">⌨️</span>
+          <div>
+            <div class="data-card-title">Typing Patterns</div>
+            <div class="data-card-desc">Speed, rhythm & error rate</div>
+          </div>
+        </div>
+        <div class="data-card">
+          <span class="data-card-icon">🖱️</span>
+          <div>
+            <div class="data-card-title">Mouse Behavior</div>
+            <div class="data-card-desc">Movement speed & click patterns</div>
+          </div>
+        </div>
+        <div class="data-card">
+          <span class="data-card-icon">📜</span>
+          <div>
+            <div class="data-card-title">Scroll Activity</div>
+            <div class="data-card-desc">Reading depth & scroll velocity</div>
+          </div>
+        </div>
+        <div class="data-card">
+          <span class="data-card-icon">🗂️</span>
+          <div>
+            <div class="data-card-title">Tab Navigation</div>
+            <div class="data-card-desc">Context switching frequency</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="privacy-banner">
+        <span class="privacy-icon">🔒</span>
+        <p>All data is sent only to <strong>your</strong> configured backend. Zero third-party sharing.</p>
+      </div>
+
+      <button class="btn-primary" id="btn-welcome-next">Get Started →</button>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════
+       SCREEN 2 — CONFIGURATION
+  ═══════════════════════════════════════════ -->
+  <div id="screen-config" class="screen" role="main">
+    <div class="screen-inner">
+
+      <div class="config-topbar">
+        <button class="back-btn" id="btn-config-back" aria-label="Go back">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+            <path d="M10 3L5 8L10 13" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </button>
+        <h2 class="config-title">Configuration</h2>
+      </div>
+
+      <div class="field-group">
+        <label class="field-label" for="api-url-input">Backend API Endpoint</label>
+        <input
+          type="url"
+          id="api-url-input"
+          class="field-input"
+          placeholder="http://localhost:8000/api/snapshot"
+          value="http://localhost:8000/api/snapshot"
+          autocomplete="off"
+          spellcheck="false"
+        >
+        <div class="field-hint">Snapshots are POSTed here every 30 seconds</div>
+        <div class="field-error" id="api-url-error"></div>
+      </div>
+
+      <div class="section-label" style="margin-top: 20px;">Data Sources</div>
+
+      <div class="toggle-list">
+        <label class="toggle-row" for="tog-keyboard">
+          <div class="toggle-row-info">
+            <span class="toggle-row-icon">⌨️</span>
+            <div>
+              <div class="toggle-row-title">Keyboard Timing</div>
+              <div class="toggle-row-desc">WPM, error rate, pause detection</div>
+            </div>
+          </div>
+          <div class="toggle-switch">
+            <input type="checkbox" id="tog-keyboard" checked>
+            <span class="toggle-track"><span class="toggle-thumb"></span></span>
+          </div>
+        </label>
+
+        <label class="toggle-row" for="tog-mouse">
+          <div class="toggle-row-info">
+            <span class="toggle-row-icon">🖱️</span>
+            <div>
+              <div class="toggle-row-title">Mouse Tracking</div>
+              <div class="toggle-row-desc">Movement speed, click patterns</div>
+            </div>
+          </div>
+          <div class="toggle-switch">
+            <input type="checkbox" id="tog-mouse" checked>
+            <span class="toggle-track"><span class="toggle-thumb"></span></span>
+          </div>
+        </label>
+
+        <label class="toggle-row" for="tog-scroll">
+          <div class="toggle-row-info">
+            <span class="toggle-row-icon">📜</span>
+            <div>
+              <div class="toggle-row-title">Scroll Behavior</div>
+              <div class="toggle-row-desc">Depth and velocity analysis</div>
+            </div>
+          </div>
+          <div class="toggle-switch">
+            <input type="checkbox" id="tog-scroll" checked>
+            <span class="toggle-track"><span class="toggle-thumb"></span></span>
+          </div>
+        </label>
+
+        <div class="toggle-separator"></div>
+
+        <label class="toggle-row" for="tog-privacy">
+          <div class="toggle-row-info">
+            <span class="toggle-row-icon">🔒</span>
+            <div>
+              <div class="toggle-row-title">Privacy Mode</div>
+              <div class="toggle-row-desc">Send domain only, not full URL</div>
+            </div>
+          </div>
+          <div class="toggle-switch">
+            <input type="checkbox" id="tog-privacy">
+            <span class="toggle-track"><span class="toggle-thumb"></span></span>
+          </div>
+        </label>
+      </div>
+
+      <button class="btn-primary" id="btn-start-monitoring">
+        <span id="btn-start-label">Start Monitoring</span>
+        <span id="btn-start-spinner" class="spinner" style="display:none"></span>
+      </button>
+
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════
+       SCREEN 3 — ACTIVE STATUS
+  ═══════════════════════════════════════════ -->
+  <div id="screen-active" class="screen" role="main">
+    <div class="screen-inner">
+
+      <div class="active-hero">
+        <div class="active-pulse">
+          <div class="pulse-ring r1"></div>
+          <div class="pulse-ring r2"></div>
+          <div class="active-brain">🧠</div>
+        </div>
+        <h2 class="active-title">Monitoring Active</h2>
+        <p class="active-desc">CogniSense is quietly collecting behavioral signals and syncing to your backend.</p>
+      </div>
+
+      <div class="stats-grid">
+        <div class="stat-card">
+          <div class="stat-label">Session</div>
+          <div class="stat-value" id="stat-session">—</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Last Sync</div>
+          <div class="stat-value" id="stat-sync">—</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Buffered</div>
+          <div class="stat-value" id="stat-buffered">0</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">State</div>
+          <div class="stat-value" id="stat-state">—</div>
+        </div>
+      </div>
+
+      <div class="endpoint-badge" id="endpoint-url"></div>
+
+      <div class="status-indicator" id="sync-status-row">
+        <div class="status-dot" id="sync-dot"></div>
+        <span id="sync-label">Connecting…</span>
+      </div>
+
+      <button class="btn-secondary" id="btn-reconfigure">⚙ Reconfigure</button>
+    </div>
+  </div>
+
+  <script src="sidepanel.js"></script>
+</body>
+</html>
