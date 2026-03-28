@@ -57,7 +57,8 @@ function initState(sessionId) {
     last_feedback: null,
     focus_streak_start: Date.now(),
     break_count: 0,
-    hud_status: 'active' // 'active' | 'offline' | 'idle'
+    hud_status: 'active', // 'active' | 'offline' | 'idle'
+    paused: false
   };
 }
 
@@ -79,15 +80,16 @@ async function initialize() {
 
   initState(session_id);
 
-  // Restore any buffered pending snapshots from storage
-  const { pending_snapshots } = await chrome.storage.local.get('pending_snapshots');
+  // Restore pending snapshots and paused state from storage
+  const { pending_snapshots, monitoring_paused } = await chrome.storage.local.get(['pending_snapshots', 'monitoring_paused']);
   state.pending_snapshots = pending_snapshots || [];
+  state.paused = monitoring_paused || false;
 
   await updateCurrentTab();
   await collectEnvironment();
   registerAlarm();
 
-  console.log('[CogniSense] Initialized. Session:', session_id);
+  console.log('[CogniSense] Initialized. Session:', session_id, '| Paused:', state.paused);
 }
 
 // ----------------------------------------------------------------
@@ -230,6 +232,7 @@ function assembleSnapshot() {
 // ----------------------------------------------------------------
 async function syncToBackend() {
   if (!config?.api_url || !state) return;
+  if (state.paused) return; // monitoring is paused by user
 
   await collectEnvironment();
   const snapshot = assembleSnapshot();
@@ -310,6 +313,7 @@ function buildStatusPayload() {
   return {
     type: 'HUD_UPDATE',
     status: state.hud_status,
+    paused: state.paused,
     pending_count: state.pending_snapshots.length,
     last_sync: state.last_sync,
     session_start: state.session_start,
@@ -382,6 +386,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         // page as a normal tab is the reliable fallback.
         chrome.tabs.create({ url: chrome.runtime.getURL('sidepanel/sidepanel.html') });
         sendResponse({ ok: true });
+        break;
+
+      case 'TOGGLE_PAUSE':
+        state.paused = !state.paused;
+        await chrome.storage.local.set({ monitoring_paused: state.paused });
+        await broadcastHudUpdate();
+        sendResponse({ ok: true, paused: state.paused });
         break;
 
       default:

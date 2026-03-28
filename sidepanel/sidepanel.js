@@ -57,23 +57,36 @@ function updateActiveScreen() {
     const stateEl    = document.getElementById('stat-state');
     const syncDotEl  = document.getElementById('sync-dot');
     const syncLabel  = document.getElementById('sync-label');
+    const pauseBtn   = document.getElementById('btn-pause');
 
     if (resp.session_start) {
       sessionEl.textContent = formatDuration(Date.now() - resp.session_start);
     }
-    syncEl.textContent     = formatLastSync(resp.last_sync);
+    syncEl.textContent     = resp.paused ? 'Paused' : formatLastSync(resp.last_sync);
     bufferedEl.textContent = resp.pending_count ?? 0;
-    stateEl.textContent    = resp.cognitive_state
-      ? resp.cognitive_state.charAt(0).toUpperCase() + resp.cognitive_state.slice(1)
-      : '—';
+    stateEl.textContent    = resp.paused ? 'Paused' :
+      (resp.cognitive_state
+        ? resp.cognitive_state.charAt(0).toUpperCase() + resp.cognitive_state.slice(1)
+        : '—');
 
-    const status = resp.status || 'active';
+    // Sync pause button label
+    if (pauseBtn) {
+      if (resp.paused) {
+        pauseBtn.textContent = '▶️ Resume Monitoring';
+        pauseBtn.classList.add('paused');
+      } else {
+        pauseBtn.textContent = '⏸️ Pause Monitoring';
+        pauseBtn.classList.remove('paused');
+      }
+    }
+
+    const status = resp.paused ? 'idle' : (resp.status || 'active');
     syncDotEl.className = `status-dot ${status}`;
-    syncLabel.textContent = {
+    syncLabel.textContent = resp.paused ? 'Monitoring paused' : {
       active:  'Syncing normally',
       offline: `Offline — ${resp.pending_count || 0} snapshot${resp.pending_count !== 1 ? 's' : ''} buffered`,
       idle:    'Idle state detected'
-    }[status] || 'Connected';
+    }[resp.status] || 'Connected';
   });
 }
 
@@ -156,6 +169,22 @@ document.getElementById('btn-start-monitoring').addEventListener('click', async 
 });
 
 // ── SCREEN 3: ACTIVE ─────────────────────────────────────────
+document.getElementById('btn-pause').addEventListener('click', () => {
+  const btn = document.getElementById('btn-pause');
+  chrome.runtime.sendMessage({ type: 'TOGGLE_PAUSE' }, (resp) => {
+    if (chrome.runtime.lastError || !resp) return;
+    if (resp.paused) {
+      btn.textContent = '▶️ Resume Monitoring';
+      btn.classList.add('paused');
+    } else {
+      btn.textContent = '⏸️ Pause Monitoring';
+      btn.classList.remove('paused');
+    }
+    // Refresh stats immediately after toggle
+    updateActiveScreen();
+  });
+});
+
 document.getElementById('btn-reconfigure').addEventListener('click', async () => {
   // Load existing config into form
   const stored = await chrome.storage.local.get(null);

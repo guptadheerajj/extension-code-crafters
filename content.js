@@ -534,6 +534,17 @@ function injectFloatingHUD() {
       text-align: center;
     }
     .cogni-btn:hover { background: rgba(255,255,255,0.09); color: #c0c0e0; border-color: rgba(255,255,255,0.12); }
+    .cogni-btn.pause-active { background: rgba(239,68,68,0.12); border-color: rgba(239,68,68,0.25); color: #f87171; }
+    .cogni-btn.pause-active:hover { background: rgba(239,68,68,0.2); }
+
+    /* PAUSED state */
+    .cogni-dot.paused { background: #6b7280; }
+    .cogni-dot.paused::after { background: rgba(107,114,128,0.2); animation: none; }
+    .cogni-collapsed-dot.paused { background: #6b7280; box-shadow: 0 0 6px rgba(107,114,128,0.5); }
+
+    /* Two-button footer */
+    .cogni-footer { margin-top: 10px; display: flex; gap: 6px; }
+    .cogni-footer .cogni-btn { width: auto; flex: 1; }
   `;
   shadow.appendChild(style);
 
@@ -580,6 +591,7 @@ function injectFloatingHUD() {
 
         <!-- Footer -->
         <div class="cogni-footer">
+          <button class="cogni-btn" id="cogni-pause-btn">⏸ Pause</button>
           <button class="cogni-btn" id="cogni-settings-btn">⚙ Settings</button>
         </div>
       </div>
@@ -603,6 +615,22 @@ function injectFloatingHUD() {
       collapsed = false;
       card.classList.remove('collapsed');
     }
+  });
+
+  shadow.getElementById('cogni-pause-btn').addEventListener('click', (e) => {
+    e.stopPropagation();
+    safeSendMessage({ type: 'TOGGLE_PAUSE' }, (resp) => {
+      if (resp) {
+        const btn = shadow.getElementById('cogni-pause-btn');
+        if (resp.paused) {
+          btn.textContent = '▶ Resume';
+          btn.classList.add('pause-active');
+        } else {
+          btn.textContent = '⏸ Pause';
+          btn.classList.remove('pause-active');
+        }
+      }
+    });
   });
 
   shadow.getElementById('cogni-settings-btn').addEventListener('click', () => {
@@ -630,8 +658,6 @@ function injectFloatingHUD() {
 }
 
 function applyHudUpdate(shadow, data) {
-  const statusClass = data.status || 'active';
-
   const dotEl       = shadow.getElementById('cogni-dot');
   const collDotEl   = shadow.getElementById('cogni-collapsed-dot');
   const statusText  = shadow.getElementById('cogni-status-text');
@@ -639,32 +665,44 @@ function applyHudUpdate(shadow, data) {
   const sessionEl   = shadow.getElementById('cogni-session');
   const syncEl      = shadow.getElementById('cogni-sync');
   const badgeEl     = shadow.getElementById('cogni-badge');
+  const pauseBtn    = shadow.getElementById('cogni-pause-btn');
 
   if (!dotEl) return;
 
-  dotEl.className = `cogni-dot ${statusClass}`;
-  collDotEl.className = `cogni-collapsed-dot ${statusClass}`;
-
-  if (data.status === 'offline') {
-    statusText.textContent = 'Offline';
-    const n = data.pending_count || 0;
-    offlineMsg.textContent = `${n} snapshot${n !== 1 ? 's' : ''} buffered`;
-    offlineMsg.style.display = 'block';
-  } else if (data.status === 'idle') {
-    statusText.textContent = 'Idle Detected';
+  // Paused overrides all connection statuses
+  if (data.paused) {
+    dotEl.className = 'cogni-dot paused';
+    collDotEl.className = 'cogni-collapsed-dot paused';
+    statusText.textContent = 'Paused';
     offlineMsg.style.display = 'none';
+    if (pauseBtn) { pauseBtn.textContent = '▶ Resume'; pauseBtn.classList.add('pause-active'); }
   } else {
-    statusText.textContent = 'Monitoring Active';
-    offlineMsg.style.display = 'none';
+    const statusClass = data.status || 'active';
+    dotEl.className = `cogni-dot ${statusClass}`;
+    collDotEl.className = `cogni-collapsed-dot ${statusClass}`;
+    if (pauseBtn) { pauseBtn.textContent = '⏸ Pause'; pauseBtn.classList.remove('pause-active'); }
+
+    if (data.status === 'offline') {
+      statusText.textContent = 'Offline';
+      const n = data.pending_count || 0;
+      offlineMsg.textContent = `${n} snapshot${n !== 1 ? 's' : ''} buffered`;
+      offlineMsg.style.display = 'block';
+    } else if (data.status === 'idle') {
+      statusText.textContent = 'Idle Detected';
+      offlineMsg.style.display = 'none';
+    } else {
+      statusText.textContent = 'Monitoring Active';
+      offlineMsg.style.display = 'none';
+    }
   }
 
   if (data.session_start) {
     sessionEl.textContent = formatDuration(Date.now() - data.session_start);
   }
 
-  syncEl.textContent = formatLastSync(data.last_sync);
+  syncEl.textContent = data.paused ? 'Paused' : formatLastSync(data.last_sync);
 
-  if (data.cognitive_state) {
+  if (data.cognitive_state && !data.paused) {
     badgeEl.textContent = `🧠 ${data.cognitive_state}`;
     badgeEl.style.display = 'block';
   } else {
